@@ -10,7 +10,7 @@ ReadB(리드비)는 1on1 미팅의 Honesty Gap을 AI로 수치화하는 B2B HR S
 - Supabase Storage (녹음 파일 임시 저장)
 - OpenAI Whisper API (STT)
 - Claude Sonnet + GPT-4o-mini (LLM Cascading)
-- Gradle (빌드)
+- Gradle 8.7 (빌드)
 - Railway (배포)
 
 ## 아키텍처 원칙
@@ -73,6 +73,9 @@ src/main/java/com/readb/
 │   └── storage/
 │       └── FileStorageService.java    ← BE2 전담 (Supabase Storage 업/다운)
 │
+├── security/                  # [BE2 초기 작성, 이후 공유]
+│   └── JwtAuthFilter.java         ← BE2 초기 작성
+│
 ├── adapter/                   # [BE1 전담 — BE2 절대 수정 금지]
 │   ├── stt/
 │   │   ├── SttAdapter.java            (인터페이스)
@@ -122,13 +125,60 @@ src/main/java/com/readb/
 - 핵심 업무: JWT 인증, 유저/팀 CRUD, 서베이, 파일 업로드, 공통 에러 처리
 - 소유 패키지: config/Security*, service/auth/*, service/user/*, service/team/*, service/survey/*, service/storage/*, controller/Auth*, controller/User*, controller/Team*, controller/Survey*
 
+## 브랜치 전략
+
+```
+main
+ └─ feat/be1-{기능명}     ← BE1 작업 브랜치
+ └─ feat/be2-{기능명}     ← BE2 작업 브랜치
+ └─ fix/be1-{버그명}
+ └─ fix/be2-{버그명}
+```
+
+| 규칙 | 내용 |
+|------|------|
+| main 브랜치 | 항상 빌드 가능한 상태 유지. 직접 push 금지. |
+| 작업 브랜치 | 기능 단위로 생성. 완료 후 PR → main 머지. |
+| PR 머지 순서 | `domain/` 또는 `common/` 변경 포함 PR 먼저 머지. 이후 상대방이 pull 후 rebase. |
+
+```bash
+git checkout -b feat/be2-auth-jwt
+git push origin feat/be2-auth-jwt
+# GitHub에서 PR 생성 → 상대방 리뷰 → main 머지
+```
+
+## 커밋 메시지 규칙
+
+```
+<type>(<scope>): <subject>
+
+[선택] body — 변경 이유, 상세 설명
+```
+
+| type | 사용 시점 |
+|------|-----------|
+| `feat` | 새 기능 추가 |
+| `fix` | 버그 수정 |
+| `refactor` | 기능 변경 없는 코드 개선 |
+| `chore` | 빌드·설정·의존성 변경 |
+| `docs` | 문서 수정 |
+| `test` | 테스트 코드 추가/수정 |
+
+```
+feat(auth): JWT 로그인/회원가입 구현
+
+- BCrypt 비밀번호 해싱
+- jjwt 0.12+ 기반 토큰 발급/검증
+- 이메일 중복 체크 예외 처리
+```
+
 ## 충돌 방지 규칙
 
 1. **파일 단위 소유권**: 위 구조에서 ← 표시된 담당자만 해당 파일 수정. 상대 파일 수정 필요 시 슬랙/디코 먼저 공유.
 2. **domain/ 엔티티 수정 프로토콜**: 필드 추가/삭제 시 반드시 상대에게 알린 후 작업. 엔티티는 양쪽 서비스가 참조하므로 가장 충돌이 잘 남.
 3. **common/ 수정 프로토콜**: ErrorCode enum에 값 추가는 자유. 기존 값 변경/삭제는 금지. ApiResponse 구조 변경은 합의 후.
 4. **application.yml 분리**: 공통 설정은 application.yml, 개인 설정은 application-local.yml (.gitignore). API 키는 환경변수로.
-5. **브랜치 네이밍**: `feat/be1-whisper-adapter`, `feat/be2-auth-jwt` — 접두사로 담당자 구분.
+5. **API 키 하드코딩 금지**: 코드에 직접 작성 절대 금지. 반드시 환경변수로.
 6. **PR 머지 순서**: domain/ 또는 common/ 변경이 포함된 PR은 먼저 머지. 이후 상대방이 pull 받고 자기 브랜치 rebase 후 작업 계속.
 
 ## API 엔드포인트 소유권
