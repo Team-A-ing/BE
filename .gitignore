@@ -3,6 +3,10 @@
 build/
 !gradle/wrapper/gradle-wrapper.jar
 
+# IDE compiled output
+bin/
+out/
+
 # IntelliJ IDEA
 .idea/
 *.iws
