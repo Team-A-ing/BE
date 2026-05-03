@@ -64,6 +64,8 @@ POST /api/v1/auth/signup
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "accessToken": "eyJhbGci...",
     "refreshToken": "eyJhbGci...",
@@ -96,6 +98,8 @@ POST /api/v1/auth/login
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "accessToken": "eyJhbGci...",
     "refreshToken": "eyJhbGci...",
@@ -127,6 +131,8 @@ POST /api/v1/auth/refresh
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "accessToken": "eyJhbGci..."
   }
@@ -146,6 +152,8 @@ Authorization: Bearer <token>
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "id": 1,
     "email": "kang@company.com",
@@ -177,6 +185,8 @@ Authorization: Bearer <token> (LEADER)
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "id": 1,
     "name": "Product A팀",
@@ -204,6 +214,8 @@ Authorization: Bearer <token>
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "teamId": 1,
     "teamName": "Product A팀"
@@ -222,6 +234,8 @@ Authorization: Bearer <token>
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": [
     {
       "id": 1,
@@ -258,6 +272,8 @@ Authorization: Bearer <token> (LEADER)
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "currentScore": 74,
     "previousScore": 62,
@@ -286,6 +302,8 @@ Authorization: Bearer <token> (LEADER)
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "aiDiagnosis": "QA 리소스 부족과 FE 소통 지연이 이번 스프린트의 핵심 병목입니다. 위험군 2명에게 즉시 비공식 1on1을 배정하세요.",
     "blockerKeywords": [
@@ -324,6 +342,8 @@ Authorization: Bearer <token> (LEADER)
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "members": [
       {
@@ -371,6 +391,8 @@ Authorization: Bearer <token> (LEADER)
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "meetingId": 10,
     "round": 12,
@@ -400,6 +422,8 @@ Authorization: Bearer <token>
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": [
     {
       "meetingId": 10,
@@ -435,6 +459,8 @@ Authorization: Bearer <token> (MEMBER)
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "surveyId": 5,
     "surveyScore": 87.0,
@@ -454,6 +480,8 @@ Authorization: Bearer <token>
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "surveyId": 5,
     "issues": ["업무 블로커", "커리어 성장"],
@@ -484,6 +512,8 @@ durationSec: 2400
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "meetingId": 10,
     "analysisId": 7,
@@ -505,6 +535,8 @@ Authorization: Bearer <token>
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "meetingId": 10,
     "step": "STT",
@@ -543,6 +575,8 @@ Authorization: Bearer <token> (LEADER)
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "meetingId": 10,
     "round": 12,
@@ -634,6 +668,8 @@ Authorization: Bearer <token> (MEMBER)
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "meetingId": 10,
     "round": 12,
@@ -662,10 +698,10 @@ Authorization: Bearer <token> (MEMBER)
       }
     ],
     "leaderPromises": [
-      { "promiseId": 4, "content": "AWS 프로덕션 접근 권한 부여", "category": "RESOURCE",      "dueDate": "2026-05-06", "status": "PENDING" },
+      { "promiseId": 4, "content": "AWS 프로덕션 접근 권한 부여",       "category": "RESOURCE",      "dueDate": "2026-05-06", "status": "PENDING" },
       { "promiseId": 5, "content": "QA 계약직 충원 안건 전사 회의 상정", "category": "TEAM_BUILDING", "dueDate": "2026-05-02", "status": "PENDING" },
-      { "promiseId": 6, "content": "MSA 전환 성과 5월 올핸즈 발표",    "category": "RECOGNITION",   "dueDate": "2026-05-15", "status": "PENDING" },
-      { "promiseId": 7, "content": "FE 코드 리뷰 SLA 기준 문서화",     "category": "PROCESS",       "dueDate": "2026-04-30", "status": "DONE" }
+      { "promiseId": 6, "content": "MSA 전환 성과 5월 올핸즈 발표",      "category": "RECOGNITION",   "dueDate": "2026-05-15", "status": "PENDING" },
+      { "promiseId": 7, "content": "FE 코드 리뷰 SLA 기준 문서화",       "category": "PROCESS",       "dueDate": "2026-04-30", "status": "DONE" }
     ]
   }
 }
@@ -693,6 +729,8 @@ Authorization: Bearer <token> (LEADER)
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "promiseId": 4,
     "status": "PENDING"
@@ -717,6 +755,8 @@ Authorization: Bearer <token> (LEADER)
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "promiseId": 4,
     "status": "DONE"
@@ -735,6 +775,8 @@ Authorization: Bearer <token> (LEADER)
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": [
     {
       "promiseId": 2,
@@ -761,6 +803,8 @@ Authorization: Bearer <token> (LEADER)
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "planId": 3,
     "isCompleted": true
@@ -781,6 +825,8 @@ Authorization: Bearer <token>
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": {
     "memberId": 1,
     "name": "강다은",
@@ -811,6 +857,8 @@ Authorization: Bearer <token>
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": [
     {
       "careerEventId": 15,
@@ -845,6 +893,8 @@ Authorization: Bearer <token>
 ```json
 {
   "success": true,
+  "code": "SUCCESS",
+  "message": "요청이 성공적으로 처리되었습니다.",
   "data": [
     {
       "careerEventId": 15,
@@ -865,16 +915,23 @@ Authorization: Bearer <token>
 
 | 코드 | HTTP | 설명 |
 |------|------|------|
-| `EMAIL_DUPLICATED` | 409 | 이미 사용 중인 이메일 |
+| `EMAIL_ALREADY_EXISTS` | 409 | 이미 사용 중인 이메일 |
 | `INVALID_CREDENTIALS` | 401 | 이메일 또는 비밀번호 불일치 |
-| `TOKEN_EXPIRED` | 401 | 액세스 토큰 만료 |
-| `TOKEN_INVALID` | 401 | 유효하지 않은 토큰 |
+| `EXPIRED_TOKEN` | 401 | 액세스 토큰 만료 |
+| `INVALID_TOKEN` | 401 | 유효하지 않은 토큰 |
+| `UNAUTHORIZED` | 401 | 인증이 필요합니다 |
 | `FORBIDDEN` | 403 | 접근 권한 없음 |
 | `USER_NOT_FOUND` | 404 | 사용자 없음 |
 | `TEAM_NOT_FOUND` | 404 | 팀 없음 |
 | `MEETING_NOT_FOUND` | 404 | 미팅 없음 |
+| `RECORDING_NOT_FOUND` | 404 | 녹음 파일 없음 |
+| `SURVEY_NOT_FOUND` | 404 | 서베이 없음 |
 | `SURVEY_ALREADY_SUBMITTED` | 409 | 이미 제출된 서베이 |
-| `RECORDING_TOO_LARGE` | 400 | 파일 25MB 초과 |
-| `ANALYSIS_NOT_COMPLETED` | 400 | 분석 미완료 상태에서 리포트 조회 |
-| `PROMISE_NOT_FOUND` | 404 | 약속 없음 |
+| `ANALYSIS_NOT_FOUND` | 404 | 분석 결과 없음 |
+| `ANALYSIS_IN_PROGRESS` | 409 | 이미 분석 진행 중 |
+| `ANALYSIS_FAILED` | 500 | 분석 처리 중 오류 |
+| `FILE_TOO_LARGE` | 413 | 파일 25MB 초과 |
+| `INVALID_FILE_FORMAT` | 400 | 지원하지 않는 파일 형식 |
+| `LLM_PARSE_FAILED` | 500 | AI 응답 파싱 실패 |
+| `INVALID_INPUT` | 400 | 잘못된 입력값 |
 | `INTERNAL_SERVER_ERROR` | 500 | 서버 내부 오류 |
