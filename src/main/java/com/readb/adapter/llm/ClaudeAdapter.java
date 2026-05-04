@@ -4,6 +4,7 @@ import com.readb.common.exception.BusinessException;
 import com.readb.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Primary;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -14,6 +15,7 @@ import java.util.Map;
 
 @Slf4j
 @Component
+@Primary
 @RequiredArgsConstructor
 public class ClaudeAdapter implements LlmAdapter {
 
