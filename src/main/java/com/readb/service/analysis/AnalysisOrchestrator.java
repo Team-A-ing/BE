@@ -2,10 +2,11 @@ package com.readb.service.analysis;
 
 import com.readb.adapter.stt.SttAdapter;
 import com.readb.adapter.llm.LlmAdapter;
-import com.readb.common.exception.ErrorCode;
+import com.readb.common.util.ByteArrayMultipartFile;
 import com.readb.domain.meeting.Meeting;
 import com.readb.domain.meeting.MeetingStatus;
 import com.readb.domain.recording.Recording;
+import com.readb.dto.meeting.RecordingPayload;
 import com.readb.repository.MeetingRepository;
 import com.readb.repository.RecordingRepository;
 import com.readb.service.storage.FileStorageService;
@@ -28,8 +29,15 @@ public class AnalysisOrchestrator {
     private final AnalysisService analysisService;
 
     @Async("analysisExecutor")
-    public void startAnalysis(Long meetingId, MultipartFile file) {
+    public void startAnalysis(Long meetingId, RecordingPayload payload) {
         Meeting meeting = meetingRepository.findById(meetingId).orElseThrow();
+        // 비동기 스레드에서도 안전하게 재사용 가능한 in-memory MultipartFile
+        MultipartFile file = new ByteArrayMultipartFile(
+                "file",
+                payload.originalFilename(),
+                payload.contentType(),
+                payload.bytes()
+        );
         try {
             // 1단계: Supabase Storage 업로드 — BE2 미구현 시 fileUrl=null로 진행
             String fileUrl = tryUpload(meetingId, file);
