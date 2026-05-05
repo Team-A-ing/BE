@@ -5,11 +5,14 @@ import java.util.Map;
 
 public record AnalysisResultResponse(
         Long meetingId,
-        Double gapScore,
-        Double surfaceScore,
-        Double inferredScore,
+        Double alignmentGap,
+        Double honestyGap,
+        Double executionGap,
+        Double safetyScore,
+        Map<String, Object> speechActs,
         List<String> blockerKeywords,
         Map<String, Object> leaderFeedback,
         Map<String, Object> memberFeedback,
-        List<String> careerTags
+        List<String> careerTags,
+        Map<String, Object> baselineData
 ) {}

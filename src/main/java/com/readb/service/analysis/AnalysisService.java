@@ -36,13 +36,16 @@ public class AnalysisService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_NOT_FOUND));
         return new AnalysisResultResponse(
                 meetingId,
-                analysis.getGapScore(),
-                analysis.getSurfaceScore(),
-                analysis.getInferredScore(),
+                analysis.getAlignmentGap(),
+                analysis.getHonestyGap(),
+                analysis.getExecutionGap(),
+                analysis.getSafetyScore(),
+                analysis.getSpeechActs(),
                 analysis.getBlockerKeywords(),
                 analysis.getLeaderFeedback(),
                 analysis.getMemberFeedback(),
-                analysis.getCareerTags()
+                analysis.getCareerTags(),
+                analysis.getBaselineData()
         );
     }
 

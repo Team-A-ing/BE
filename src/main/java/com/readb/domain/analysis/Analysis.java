@@ -25,14 +25,24 @@ public class Analysis {
     @Column(name = "meeting_id", nullable = false, unique = true)
     private Long meetingId;
 
-    @Column(name = "gap_score")
-    private Double gapScore;
+    // 3-Gap Model
+    @Column(name = "alignment_gap")
+    private Double alignmentGap;
 
-    @Column(name = "surface_score")
-    private Double surfaceScore;
+    @Column(name = "honesty_gap")
+    private Double honestyGap;
 
-    @Column(name = "inferred_score")
-    private Double inferredScore;
+    @Column(name = "execution_gap")
+    private Double executionGap;
+
+    // Speech Act 카운팅 기반 심리적 안전감 점수 (0~100)
+    @Column(name = "safety_score")
+    private Double safetyScore;
+
+    // {"vulnerability":[{text,timestamp}], "dissent":[...], "initiative":[...]}
+    @Type(JsonBinaryType.class)
+    @Column(name = "speech_acts", columnDefinition = "jsonb")
+    private Map<String, Object> speechActs;
 
     @Type(JsonBinaryType.class)
     @Column(name = "blocker_keywords", columnDefinition = "jsonb")
@@ -49,6 +59,11 @@ public class Analysis {
     @Type(JsonBinaryType.class)
     @Column(name = "career_tags", columnDefinition = "jsonb")
     private List<String> careerTags;
+
+    // 최근 3회 평균 등 베이스라인: {prev_avg_vulnerability, prev_avg_dissent, prev_avg_initiative, ...}
+    @Type(JsonBinaryType.class)
+    @Column(name = "baseline_data", columnDefinition = "jsonb")
+    private Map<String, Object> baselineData;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
