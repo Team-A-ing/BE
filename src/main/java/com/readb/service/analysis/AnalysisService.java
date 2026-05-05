@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -25,9 +26,35 @@ public class AnalysisService {
 
     @Transactional
     public void analyze(Long meetingId, String transcript) {
-        // TODO: LLM 프롬프트 설계 및 JSON 파싱 구현
-        // 파싱 실패 시 1회 재시도, 재실패 시 예외 throw → Orchestrator가 FAILED 처리
-        throw new UnsupportedOperationException("BE1 구현 예정");
+        // TODO(5/7): 실제 LLM Cascading 파이프라인으로 교체.
+        // 5/8 데모용 stub — Orchestrator → STT → 분석 결과 저장 흐름이 끝까지 동작함을 보여주기 위한 정적 더미.
+        // 재실행 idempotent 처리를 위해 기존 분석이 있으면 삭제 후 저장.
+        analysisRepository.findByMeetingId(meetingId).ifPresent(analysisRepository::delete);
+
+        Analysis analysis = Analysis.builder()
+                .meetingId(meetingId)
+                .alignmentGap(68.0)
+                .honestyGap(15.0)
+                .executionGap(25.0)
+                .safetyScore(72.0)
+                .speechActs(Map.of(
+                        "vulnerability", List.of(),
+                        "dissent",       List.of(),
+                        "initiative",    List.of()
+                ))
+                .blockerKeywords(List.of("일정 압박", "QA 리소스", "커뮤니케이션"))
+                .leaderFeedback(Map.of(
+                        "summary",  "팀원이 자발적 제안을 거의 하지 않았습니다. 안전감 점검이 필요해 보입니다.",
+                        "severity", "WARNING"
+                ))
+                .memberFeedback(Map.of(
+                        "summary",  "다음 1on1에서는 우려사항을 미리 정리해 공유해 보세요.",
+                        "severity", "INFO"
+                ))
+                .careerTags(List.of("주도성", "협업"))
+                .baselineData(Map.of())
+                .build();
+        analysisRepository.save(analysis);
     }
 
     @Transactional(readOnly = true)
