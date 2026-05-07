@@ -38,6 +38,7 @@ public class AuthService {
         userRepository.save(user);
     }
 
+    @Transactional(readOnly = true)
     public TokenRefreshResponse refresh(TokenRefreshRequest request) {
         String refreshToken = request.refreshToken();
         if (!jwtUtil.isValid(refreshToken) || !jwtUtil.isRefreshToken(refreshToken)) {
