@@ -24,14 +24,19 @@ public class TeamService {
 
     @Transactional
     public TeamCreateResponse createTeam(Long leaderId, TeamCreateRequest request) {
+        User leader = userRepository.findById(leaderId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        if (leader.getTeamId() != null) {
+            throw new BusinessException(ErrorCode.ALREADY_IN_TEAM);
+        }
+
         Team team = Team.builder()
                 .name(request.name())
                 .leaderId(leaderId)
                 .build();
         Team saved = teamRepository.save(team);
 
-        User leader = userRepository.findById(leaderId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         leader.assignTeam(saved.getId());
 
         return TeamCreateResponse.from(saved);

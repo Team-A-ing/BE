@@ -18,8 +18,15 @@ public class SurveyService {
 
     @Transactional
     public void submitSurvey(Long memberId, SurveyRequest request) {
-        // TODO: BE2 구현
-        throw new UnsupportedOperationException("BE2 구현 예정");
+        if (surveyRepository.existsByMeetingIdAndMemberId(request.meetingId(), memberId)) {
+            throw new BusinessException(ErrorCode.SURVEY_ALREADY_SUBMITTED);
+        }
+        Survey survey = Survey.builder()
+                .meetingId(request.meetingId())
+                .memberId(memberId)
+                .scores(request.scores())
+                .build();
+        surveyRepository.save(survey);
     }
 
     @Transactional(readOnly = true)
