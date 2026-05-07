@@ -2,6 +2,8 @@ package com.readb.service.analysis;
 
 import com.readb.adapter.stt.SttAdapter;
 import com.readb.adapter.llm.LlmAdapter;
+import com.readb.common.exception.BusinessException;
+import com.readb.common.exception.ErrorCode;
 import com.readb.common.util.ByteArrayMultipartFile;
 import com.readb.domain.meeting.Meeting;
 import com.readb.domain.meeting.MeetingStatus;
@@ -30,15 +32,20 @@ public class AnalysisOrchestrator {
 
     @Async("analysisExecutor")
     public void startAnalysis(Long meetingId, RecordingPayload payload) {
-        Meeting meeting = meetingRepository.findById(meetingId).orElseThrow();
-        // 비동기 스레드에서도 안전하게 재사용 가능한 in-memory MultipartFile
-        MultipartFile file = new ByteArrayMultipartFile(
-                "file",
-                payload.originalFilename(),
-                payload.contentType(),
-                payload.bytes()
-        );
+        Meeting meeting = null;
         try {
+            // 미팅 조회를 try 블록 안에서 수행 — 존재하지 않을 때 catch로 떨어져 로그/상태 처리.
+            meeting = meetingRepository.findById(meetingId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
+
+            // 비동기 스레드에서도 안전하게 재사용 가능한 in-memory MultipartFile
+            MultipartFile file = new ByteArrayMultipartFile(
+                    "file",
+                    payload.originalFilename(),
+                    payload.contentType(),
+                    payload.bytes()
+            );
+
             // 1단계: Supabase Storage 업로드 — BE2 미구현 시 fileUrl=null로 진행
             String fileUrl = tryUpload(meetingId, file);
 
@@ -66,9 +73,13 @@ public class AnalysisOrchestrator {
             meeting.updateStatus(MeetingStatus.COMPLETED);
         } catch (Exception e) {
             log.error("Analysis failed for meetingId={}", meetingId, e);
-            meeting.updateStatus(MeetingStatus.FAILED);
+            if (meeting != null) {
+                meeting.updateStatus(MeetingStatus.FAILED);
+            }
         }
-        meetingRepository.save(meeting);
+        if (meeting != null) {
+            meetingRepository.save(meeting);
+        }
     }
 
     private String tryUpload(Long meetingId, MultipartFile file) {
