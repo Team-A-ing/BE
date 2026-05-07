@@ -7,12 +7,15 @@ import com.readb.domain.meeting.MeetingStatus;
 import com.readb.dto.meeting.MeetingCreateRequest;
 import com.readb.dto.meeting.MeetingCreateResponse;
 import com.readb.dto.meeting.MeetingStatusResponse;
+import com.readb.dto.meeting.RecordingPayload;
 import com.readb.repository.MeetingRepository;
 import com.readb.service.analysis.AnalysisOrchestrator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
 
 @Service
 @RequiredArgsConstructor
@@ -38,9 +41,23 @@ public class MeetingService {
         if (!meeting.getLeaderId().equals(leaderId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
+        // MultipartFile은 요청 스레드 종료 시 InputStream이 닫힐 수 있어
+        // 비동기 스레드로 넘기기 전 byte[]로 동기 추출.
+        RecordingPayload payload = extractPayload(file);
         meeting.updateStatus(MeetingStatus.ANALYZING);
-        // 비동기 분석 시작 — 즉시 반환, 클라이언트는 /status 폴링
-        analysisOrchestrator.startAnalysis(meetingId, file);
+        analysisOrchestrator.startAnalysis(meetingId, payload);
+    }
+
+    private RecordingPayload extractPayload(MultipartFile file) {
+        try {
+            return new RecordingPayload(
+                    file.getBytes(),
+                    file.getOriginalFilename(),
+                    file.getContentType()
+            );
+        } catch (IOException e) {
+            throw new BusinessException(ErrorCode.FILE_UPLOAD_FAILED);
+        }
     }
 
     @Transactional(readOnly = true)
