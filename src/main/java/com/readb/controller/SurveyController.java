@@ -11,7 +11,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/surveys")
+@RequestMapping("/api/v1/surveys")
 @RequiredArgsConstructor
 public class SurveyController {
 
