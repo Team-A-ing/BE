@@ -27,12 +27,12 @@ public class AnalysisOrchestrator {
     private final LlmAdapter llmAdapter;
     private final AnalysisService analysisService;
 
-    @Async
+    @Async("analysisExecutor")
     public void startAnalysis(Long meetingId, MultipartFile file) {
         Meeting meeting = meetingRepository.findById(meetingId).orElseThrow();
         try {
-            // 1단계: Supabase Storage 업로드
-            String fileUrl = fileStorageService.upload(meetingId, file);
+            // 1단계: Supabase Storage 업로드 — BE2 미구현 시 fileUrl=null로 진행
+            String fileUrl = tryUpload(meetingId, file);
 
             // 2단계: STT (Whisper) — 통짜 파일 전송
             String transcript = sttAdapter.transcribe(file);
@@ -48,9 +48,12 @@ public class AnalysisOrchestrator {
             // 4단계: LLM 분석 → Analysis 저장
             analysisService.analyze(meetingId, transcript);
 
-            // 5단계: 원본 파일 삭제 (보안)
-            fileStorageService.delete(fileUrl);
-            recording.deleteFileUrl();
+            // 5단계: 원본 파일 삭제 (보안) — fileUrl이 있을 때만 시도
+            if (fileUrl != null) {
+                tryDelete(fileUrl);
+                recording.deleteFileUrl();
+                recordingRepository.save(recording);
+            }
 
             meeting.updateStatus(MeetingStatus.COMPLETED);
         } catch (Exception e) {
@@ -58,5 +61,22 @@ public class AnalysisOrchestrator {
             meeting.updateStatus(MeetingStatus.FAILED);
         }
         meetingRepository.save(meeting);
+    }
+
+    private String tryUpload(Long meetingId, MultipartFile file) {
+        try {
+            return fileStorageService.upload(meetingId, file);
+        } catch (UnsupportedOperationException e) {
+            log.warn("FileStorageService 미구현 — Storage 단계 건너뜀 (meetingId={})", meetingId);
+            return null;
+        }
+    }
+
+    private void tryDelete(String fileUrl) {
+        try {
+            fileStorageService.delete(fileUrl);
+        } catch (UnsupportedOperationException e) {
+            log.warn("FileStorageService 미구현 — 파일 삭제 건너뜀 (fileUrl={})", fileUrl);
+        }
     }
 }
