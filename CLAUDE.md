@@ -203,24 +203,24 @@ src/main/java/com/readb/
 
 ```
 # BE2 소유
-POST   /api/auth/signup
-POST   /api/auth/login
-GET    /api/users/me
-PUT    /api/users/me
-GET    /api/teams/{teamId}/members
-POST   /api/surveys                     (사전 서베이 제출)
-GET    /api/surveys?meetingId=           (서베이 조회)
+POST   /api/v1/auth/signup
+POST   /api/v1/auth/login
+GET    /api/v1/users/me
+PUT    /api/v1/users/me
+GET    /api/v1/teams/{teamId}/members
+POST   /api/v1/surveys                     (사전 서베이 제출)
+GET    /api/v1/surveys?meetingId=           (서베이 조회)
 
 # BE1 소유
-POST   /api/meetings                    (미팅 생성)
-POST   /api/meetings/{id}/recording     (녹음 업로드 → 비동기 분석)
-GET    /api/meetings/{id}/status        (분석 진행 상태)
-GET    /api/meetings/{id}/analysis      (분석 결과)
-GET    /api/leader/radar?teamId=        (Silent Risk 산점도 데이터)
-GET    /api/leader/blockers?teamId=     (Blocker Cloud 데이터)
-GET    /api/leader/promises             (Promise Ledger)
-GET    /api/member/career-memory        (Career Memory 타임라인)
-GET    /api/member/feedback?meetingId=  (코칭 피드백 카드)
+POST   /api/v1/meetings                    (미팅 생성)
+POST   /api/v1/meetings/{id}/recording     (녹음 업로드 → 비동기 분석)
+GET    /api/v1/meetings/{id}/status        (분석 진행 상태)
+GET    /api/v1/meetings/{id}/analysis      (분석 결과)
+GET    /api/v1/leader/radar?teamId=        (Silent Risk 산점도 데이터)
+GET    /api/v1/leader/blockers?teamId=     (Blocker Cloud 데이터)
+GET    /api/v1/leader/promises             (Promise Ledger)
+GET    /api/v1/member/career-memory        (Career Memory 타임라인)
+GET    /api/v1/member/feedback?meetingId=  (코칭 피드백 카드)
 ```
 
 ## DB 스키마 소유권
