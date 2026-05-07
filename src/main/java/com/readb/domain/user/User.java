@@ -37,4 +37,12 @@ public class User {
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
+
+    public void updateProfile(String name) {
+        this.name = name;
+    }
+
+    public void assignTeam(Long teamId) {
+        this.teamId = teamId;
+    }
 }

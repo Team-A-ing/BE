@@ -24,8 +24,9 @@ public class UserService {
 
     @Transactional
     public UserProfileResponse updateMyProfile(Long userId, UserUpdateRequest request) {
-        // TODO: BE2 구현
-        throw new UnsupportedOperationException("BE2 구현 예정");
+        User user = findUser(userId);
+        user.updateProfile(request.name());
+        return UserProfileResponse.from(user);
     }
 
     private User findUser(Long userId) {
