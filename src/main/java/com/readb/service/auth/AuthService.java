@@ -43,7 +43,11 @@ public class AuthService {
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
-        String token = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getRole().name());
-        return new LoginResponse(token, user.getId(), user.getName(), user.getRole().name());
+        String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getEmail(), user.getRole().name());
+        String refreshToken = jwtUtil.generateRefreshToken(user.getId());
+        LoginResponse.UserInfo userInfo = new LoginResponse.UserInfo(
+                user.getId(), user.getEmail(), user.getName(), user.getRole().name(), user.getTeamId()
+        );
+        return new LoginResponse(accessToken, refreshToken, userInfo);
     }
 }
