@@ -25,7 +25,7 @@ public class AuthService {
     private final JwtUtil jwtUtil;
 
     @Transactional
-    public void signup(SignupRequest request) {
+    public LoginResponse signup(SignupRequest request) {
         if (userRepository.existsByEmail(request.email())) {
             throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
@@ -35,7 +35,14 @@ public class AuthService {
                 .name(request.name())
                 .role(UserRole.valueOf(request.role()))
                 .build();
-        userRepository.save(user);
+        User saved = userRepository.save(user);
+
+        String accessToken = jwtUtil.generateAccessToken(saved.getId(), saved.getEmail(), saved.getRole().name());
+        String refreshToken = jwtUtil.generateRefreshToken(saved.getId());
+        LoginResponse.UserInfo userInfo = new LoginResponse.UserInfo(
+                saved.getId(), saved.getEmail(), saved.getName(), saved.getRole().name(), saved.getTeamId()
+        );
+        return new LoginResponse(accessToken, refreshToken, userInfo);
     }
 
     @Transactional(readOnly = true)
