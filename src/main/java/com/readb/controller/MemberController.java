@@ -21,8 +21,7 @@ public class MemberController {
     @GetMapping("/career-memory")
     public ApiResponse<List<CareerMemoryResponse>> getCareerMemory(
             @AuthenticationPrincipal Long memberId) {
-        // TODO: BE1 구현 — 해당 멤버의 미팅별 careerTags 타임라인 조회
-        throw new UnsupportedOperationException("BE1 구현 예정");
+        return ApiResponse.ok(analysisService.getCareerMemory(memberId));
     }
 
     // 코칭 피드백 카드
