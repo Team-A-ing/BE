@@ -29,10 +29,18 @@ public class ApiResponse<T> {
     }
 
     public static <T> ApiResponse<T> error(ErrorCode errorCode) {
-        return new ApiResponse<>(false, errorCode.name(), errorCode.getMessage(), null);
+        return error(errorCode, errorCode.getMessage());
+    }
+
+    public static <T> ApiResponse<T> error(ErrorCode errorCode, String message) {
+        return new ApiResponse<>(false, errorCode.name(), message, null);
     }
 
     public static <T> ApiResponse<T> error(String code, String message) {
         return new ApiResponse<>(false, code, message, null);
+    }
+
+    public static <T> ApiResponse<T> error(ErrorCode errorCode, T data) {
+        return new ApiResponse<>(false, errorCode.name(), errorCode.getMessage(), data);
     }
 }
