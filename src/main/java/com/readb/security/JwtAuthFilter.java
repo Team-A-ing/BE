@@ -28,7 +28,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                                     @NonNull FilterChain filterChain) throws ServletException, IOException {
         String token = extractToken(request);
 
-        if (token != null && jwtUtil.isValid(token)) {
+        if (token != null && jwtUtil.isValid(token) && jwtUtil.isAccessToken(token)) {
             Claims claims = jwtUtil.parseToken(token);
             Long userId = Long.valueOf(claims.getSubject());
             String role = claims.get("role", String.class);

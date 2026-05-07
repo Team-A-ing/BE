@@ -8,6 +8,8 @@ import com.readb.domain.user.UserRole;
 import com.readb.dto.auth.LoginRequest;
 import com.readb.dto.auth.LoginResponse;
 import com.readb.dto.auth.SignupRequest;
+import com.readb.dto.auth.TokenRefreshRequest;
+import com.readb.dto.auth.TokenRefreshResponse;
 import com.readb.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -37,13 +39,30 @@ public class AuthService {
     }
 
     @Transactional(readOnly = true)
+    public TokenRefreshResponse refresh(TokenRefreshRequest request) {
+        String refreshToken = request.refreshToken();
+        if (!jwtUtil.isValid(refreshToken) || !jwtUtil.isRefreshToken(refreshToken)) {
+            throw new BusinessException(ErrorCode.INVALID_TOKEN);
+        }
+        Long userId = jwtUtil.getUserId(refreshToken);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        String newAccessToken = jwtUtil.generateAccessToken(user.getId(), user.getEmail(), user.getRole().name());
+        return new TokenRefreshResponse(newAccessToken);
+    }
+
+    @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
-        String token = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getRole().name());
-        return new LoginResponse(token, user.getId(), user.getName(), user.getRole().name());
+        String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getEmail(), user.getRole().name());
+        String refreshToken = jwtUtil.generateRefreshToken(user.getId());
+        LoginResponse.UserInfo userInfo = new LoginResponse.UserInfo(
+                user.getId(), user.getEmail(), user.getName(), user.getRole().name(), user.getTeamId()
+        );
+        return new LoginResponse(accessToken, refreshToken, userInfo);
     }
 }

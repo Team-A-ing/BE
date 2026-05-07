@@ -4,6 +4,8 @@ import com.readb.common.response.ApiResponse;
 import com.readb.dto.auth.LoginRequest;
 import com.readb.dto.auth.LoginResponse;
 import com.readb.dto.auth.SignupRequest;
+import com.readb.dto.auth.TokenRefreshRequest;
+import com.readb.dto.auth.TokenRefreshResponse;
 import com.readb.service.auth.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -27,5 +29,10 @@ public class AuthController {
     @PostMapping("/login")
     public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return ApiResponse.ok(authService.login(request));
+    }
+
+    @PostMapping("/refresh")
+    public ApiResponse<TokenRefreshResponse> refresh(@Valid @RequestBody TokenRefreshRequest request) {
+        return ApiResponse.ok(authService.refresh(request));
     }
 }
