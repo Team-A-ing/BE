@@ -52,6 +52,7 @@ public class AnalysisOrchestrator {
             if (fileUrl != null) {
                 tryDelete(fileUrl);
                 recording.deleteFileUrl();
+                recordingRepository.save(recording);
             }
 
             meeting.updateStatus(MeetingStatus.COMPLETED);
