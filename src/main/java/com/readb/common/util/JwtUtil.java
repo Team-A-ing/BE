@@ -75,4 +75,20 @@ public class JwtUtil {
             return false;
         }
     }
+
+    public boolean isAccessToken(String token) {
+        try {
+            return "access".equals(parseToken(token).get("type", String.class));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public boolean isRefreshToken(String token) {
+        try {
+            return "refresh".equals(parseToken(token).get("type", String.class));
+        } catch (Exception e) {
+            return false;
+        }
+    }
 }

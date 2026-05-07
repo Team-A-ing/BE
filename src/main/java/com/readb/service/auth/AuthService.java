@@ -8,6 +8,8 @@ import com.readb.domain.user.UserRole;
 import com.readb.dto.auth.LoginRequest;
 import com.readb.dto.auth.LoginResponse;
 import com.readb.dto.auth.SignupRequest;
+import com.readb.dto.auth.TokenRefreshRequest;
+import com.readb.dto.auth.TokenRefreshResponse;
 import com.readb.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -34,6 +36,18 @@ public class AuthService {
                 .role(UserRole.valueOf(request.role()))
                 .build();
         userRepository.save(user);
+    }
+
+    public TokenRefreshResponse refresh(TokenRefreshRequest request) {
+        String refreshToken = request.refreshToken();
+        if (!jwtUtil.isValid(refreshToken) || !jwtUtil.isRefreshToken(refreshToken)) {
+            throw new BusinessException(ErrorCode.INVALID_TOKEN);
+        }
+        Long userId = jwtUtil.getUserId(refreshToken);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        String newAccessToken = jwtUtil.generateAccessToken(user.getId(), user.getEmail(), user.getRole().name());
+        return new TokenRefreshResponse(newAccessToken);
     }
 
     @Transactional(readOnly = true)
