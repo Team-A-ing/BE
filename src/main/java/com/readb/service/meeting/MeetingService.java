@@ -37,6 +37,7 @@ public class MeetingService {
                 .teamId(request.teamId())
                 .leaderId(leaderId)
                 .memberId(request.memberId())
+                .scheduledAt(request.scheduledAt())
                 .build();
         Meeting saved = meetingRepository.save(meeting);
         return new MeetingCreateResponse(saved.getId(), saved.getStatus().name());
@@ -109,7 +110,7 @@ public class MeetingService {
         return new MeetingDetailResponse(
                 meetingId,
                 round,
-                meeting.getCreatedAt(),
+                meeting.getScheduledAt(),
                 durationSec,
                 meeting.getStatus().name(),
                 leader.getName(),
