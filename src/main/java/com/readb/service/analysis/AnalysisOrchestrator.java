@@ -84,7 +84,7 @@ public class AnalysisOrchestrator {
 
     private String tryUpload(Long meetingId, MultipartFile file) {
         try {
-            return fileStorageService.upload(meetingId, file);
+            return fileStorageService.upload(file, "meetings/%d/%s".formatted(meetingId, file.getOriginalFilename()));
         } catch (UnsupportedOperationException e) {
             log.warn("FileStorageService 미구현 — Storage 단계 건너뜀 (meetingId={})", meetingId);
             return null;

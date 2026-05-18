@@ -38,6 +38,14 @@ public class Recording {
         this.transcript = transcript;
     }
 
+    public void updateFileUrl(String fileUrl) {
+        this.fileUrl = fileUrl;
+    }
+
+    public void updateDurationSec(Integer durationSec) {
+        this.durationSec = durationSec;
+    }
+
     public void deleteFileUrl() {
         this.fileUrl = null;
     }

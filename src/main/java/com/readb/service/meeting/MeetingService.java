@@ -16,15 +16,26 @@ import com.readb.repository.RecordingRepository;
 import com.readb.repository.UserRepository;
 import com.readb.service.analysis.AnalysisOrchestrator;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.LocalDate;
+import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MeetingService {
+
+    private static final Set<MeetingStatus> UPLOAD_BLOCKED_STATUSES = Set.of(
+            MeetingStatus.TRANSCRIBING,
+            MeetingStatus.ANALYZING,
+            MeetingStatus.COMPLETED
+    );
 
     private final MeetingRepository meetingRepository;
     private final RecordingRepository recordingRepository;
@@ -35,54 +46,44 @@ public class MeetingService {
     public MeetingCreateResponse createMeeting(Long leaderId, MeetingCreateRequest request) {
         Meeting meeting = Meeting.builder()
                 .teamId(request.teamId())
+                .title(resolveTitle(request.title()))
                 .leaderId(leaderId)
                 .memberId(request.memberId())
                 .scheduledAt(request.scheduledAt())
                 .build();
+
         Meeting saved = meetingRepository.save(meeting);
+        log.info("Meeting created. meetingId={}, teamId={}, leaderId={}, memberId={}",
+                saved.getId(), saved.getTeamId(), saved.getLeaderId(), saved.getMemberId());
         return new MeetingCreateResponse(saved.getId(), saved.getStatus().name());
     }
 
-    // TODO(데모 후): @Transactional 안에서 @Async 호출 시 race condition 가능성.
-    //   - 비동기 startAnalysis가 매우 빨리 끝나 status=COMPLETED로 갱신했을 때,
-    //     이 트랜잭션이 뒤늦게 커밋되며 dirty checking으로 ANALYZING을 다시 덮어쓸 위험.
-    //   - 또한 비동기 스레드가 아직 커밋되지 않은 ANALYZING 상태를 못 볼 수도 있음.
-    //   - 실제 STT는 5초 이상 소요되어 데모에선 발생률 낮으나, stub 분석에선 발생 가능.
-    //   - 정식 해결: ApplicationEvent + @TransactionalEventListener(AFTER_COMMIT) 패턴으로 교체.
-    @Transactional
-    public void uploadRecording(Long meetingId, Long leaderId, MultipartFile file) {
+    public void uploadRecording(Long meetingId, Long leaderId, MultipartFile file, Integer durationSec) {
         Meeting meeting = findMeeting(meetingId);
-        if (!meeting.getLeaderId().equals(leaderId)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN);
-        }
-        // MultipartFile은 요청 스레드 종료 시 InputStream이 닫힐 수 있어
-        // 비동기 스레드로 넘기기 전 byte[]로 동기 추출.
-        RecordingPayload payload = extractPayload(file);
-        meeting.updateStatus(MeetingStatus.ANALYZING);
-        analysisOrchestrator.startAnalysis(meetingId, payload);
-    }
+        validateOwner(meeting, leaderId);
+        validateUploadable(meeting);
+        validateFile(file);
 
-    private RecordingPayload extractPayload(MultipartFile file) {
-        try {
-            return new RecordingPayload(
-                    file.getBytes(),
-                    file.getOriginalFilename(),
-                    file.getContentType()
-            );
-        } catch (IOException e) {
-            throw new BusinessException(ErrorCode.FILE_UPLOAD_FAILED);
-        }
+        RecordingPayload payload = extractPayload(file, durationSec);
+
+        meeting.updateStatus(MeetingStatus.TRANSCRIBING);
+        meetingRepository.save(meeting);
+        log.info("Recording accepted. meetingId={}", meetingId);
+
+        analysisOrchestrator.startAnalysis(meetingId, payload);
     }
 
     @Transactional(readOnly = true)
     public MeetingStatusResponse getStatus(Long meetingId) {
         Meeting meeting = findMeeting(meetingId);
         int progress = switch (meeting.getStatus()) {
-            case PENDING -> 0;
+            // main 브랜치의 새로운 상태값 수용 (MeetingStatus.java에도 해당 Enum이 있는지 꼭 확인해주세요!)
+            case PENDING -> 0;        
             case RECORDING -> 10;
             case ANALYZING -> 50;
             case COMPLETED -> 100;
             case FAILED -> -1;
+            default -> 0; // 혹시 저희 브랜치의 TRANSCRIBING 등이 남아있다면 대비
         };
         return new MeetingStatusResponse(meetingId, meeting.getStatus().name(), progress);
     }
@@ -116,6 +117,45 @@ public class MeetingService {
                 leader.getName(),
                 member.getName()
         );
+    }
+
+    private String resolveTitle(String title) {
+        if (StringUtils.hasText(title)) {
+            return title.trim();
+        }
+        return "1:1 Meeting " + LocalDate.now();
+    }
+
+    private void validateOwner(Meeting meeting, Long leaderId) {
+        if (!meeting.getLeaderId().equals(leaderId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+    }
+
+    private void validateUploadable(Meeting meeting) {
+        if (UPLOAD_BLOCKED_STATUSES.contains(meeting.getStatus())) {
+            throw new BusinessException(ErrorCode.ANALYSIS_IN_PROGRESS);
+        }
+    }
+
+    private void validateFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_FILE_FORMAT);
+        }
+    }
+
+    private RecordingPayload extractPayload(MultipartFile file, Integer durationSec) {
+        try {
+            return new RecordingPayload(
+                    file.getBytes(),
+                    file.getOriginalFilename(),
+                    file.getContentType(),
+                    durationSec
+            );
+        } catch (IOException e) {
+            log.error("Failed to read uploaded recording. filename={}", file.getOriginalFilename(), e);
+            throw new BusinessException(ErrorCode.FILE_UPLOAD_FAILED);
+        }
     }
 
     private Meeting findMeeting(Long meetingId) {
