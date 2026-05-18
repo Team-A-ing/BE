@@ -31,6 +31,9 @@ public class User {
     @Column(nullable = false)
     private UserRole role;
 
+    @Column(name = "job_title", length = 100)
+    private String jobTitle;
+
     @Column(name = "team_id")
     private Long teamId;
 

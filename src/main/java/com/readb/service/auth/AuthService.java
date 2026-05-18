@@ -34,13 +34,14 @@ public class AuthService {
                 .passwordHash(passwordEncoder.encode(request.password()))
                 .name(request.name())
                 .role(UserRole.valueOf(request.role()))
+                .jobTitle(request.jobTitle())
                 .build();
-        User saved = userRepository.save(user);
-
-        String accessToken = jwtUtil.generateAccessToken(saved.getId(), saved.getEmail(), saved.getRole().name());
-        String refreshToken = jwtUtil.generateRefreshToken(saved.getId());
+        userRepository.save(user);
+        String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getEmail(), user.getRole().name());
+        String refreshToken = jwtUtil.generateRefreshToken(user.getId());
         LoginResponse.UserInfo userInfo = new LoginResponse.UserInfo(
-                saved.getId(), saved.getEmail(), saved.getName(), saved.getRole().name(), saved.getTeamId()
+                user.getId(), user.getEmail(), user.getName(), user.getRole().name(),
+                user.getJobTitle(), user.getTeamId()
         );
         return new LoginResponse(accessToken, refreshToken, userInfo);
     }
@@ -68,7 +69,8 @@ public class AuthService {
         String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getEmail(), user.getRole().name());
         String refreshToken = jwtUtil.generateRefreshToken(user.getId());
         LoginResponse.UserInfo userInfo = new LoginResponse.UserInfo(
-                user.getId(), user.getEmail(), user.getName(), user.getRole().name(), user.getTeamId()
+                user.getId(), user.getEmail(), user.getName(), user.getRole().name(),
+                user.getJobTitle(), user.getTeamId()
         );
         return new LoginResponse(accessToken, refreshToken, userInfo);
     }

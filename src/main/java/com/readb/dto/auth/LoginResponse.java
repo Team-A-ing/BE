@@ -10,6 +10,7 @@ public record LoginResponse(
             String email,
             String name,
             String role,
+            String jobTitle,
             Long teamId
     ) {}
 }

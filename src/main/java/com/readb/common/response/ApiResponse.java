@@ -24,6 +24,10 @@ public class ApiResponse<T> {
         return new ApiResponse<>(true, "SUCCESS", null, data);
     }
 
+    public static <T> ApiResponse<T> ok(T data, String message) {
+        return new ApiResponse<>(true, "SUCCESS", message, data);
+    }
+
     public static <T> ApiResponse<T> ok() {
         return new ApiResponse<>(true, "SUCCESS", null, null);
     }
