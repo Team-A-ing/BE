@@ -12,7 +12,12 @@ spring:
         dialect: org.hibernate.dialect.H2Dialect
 
 jwt:
-  secret: test-secret-key-for-readb-application-context
+  secret: test-secret-key-for-readb-application-context-minimum32chars
+  access-expiration-ms: 3600000
+  refresh-expiration-ms: 1209600000
+
+cors:
+  allowed-origins: http://localhost:3000
 
 openai:
   api-key: test-openai-key
