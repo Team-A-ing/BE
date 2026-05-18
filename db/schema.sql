@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS teams (
     created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_teams_leader FOREIGN KEY (leader_id) REFERENCES users(id)
 );
+CREATE INDEX IF NOT EXISTS idx_teams_leader_id ON teams(leader_id);
 
 -- users.team_id FK는 teams 생성 후 추가 (순환 참조)
 ALTER TABLE users
@@ -55,7 +56,8 @@ CREATE TABLE IF NOT EXISTS meetings (
     created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_meetings_team   FOREIGN KEY (team_id)   REFERENCES teams(id),
     CONSTRAINT fk_meetings_leader FOREIGN KEY (leader_id) REFERENCES users(id),
-    CONSTRAINT fk_meetings_member FOREIGN KEY (member_id) REFERENCES users(id)
+    CONSTRAINT fk_meetings_member FOREIGN KEY (member_id) REFERENCES users(id),
+    CONSTRAINT chk_meetings_status CHECK (status IN ('PENDING','RECORDING','ANALYZING','COMPLETED','FAILED'))
 );
 CREATE INDEX IF NOT EXISTS idx_meetings_team_id   ON meetings(team_id);
 CREATE INDEX IF NOT EXISTS idx_meetings_leader_id ON meetings(leader_id);
@@ -129,7 +131,8 @@ CREATE TABLE IF NOT EXISTS promises (
     status      VARCHAR(20) NOT NULL DEFAULT 'PENDING',  -- PENDING|DONE|MISSED
     created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_promises_meeting FOREIGN KEY (meeting_id) REFERENCES meetings(id),
-    CONSTRAINT fk_promises_owner   FOREIGN KEY (owner_id)   REFERENCES users(id)
+    CONSTRAINT fk_promises_owner   FOREIGN KEY (owner_id)   REFERENCES users(id),
+    CONSTRAINT chk_promises_status CHECK (status IN ('PENDING','DONE','MISSED'))
 );
 CREATE INDEX IF NOT EXISTS idx_promises_owner_id ON promises(owner_id);
 CREATE INDEX IF NOT EXISTS idx_promises_status   ON promises(status);
@@ -150,7 +153,8 @@ CREATE TABLE IF NOT EXISTS career_events (
     occurred_at  TIMESTAMP,
     created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_career_events_user    FOREIGN KEY (user_id)    REFERENCES users(id),
-    CONSTRAINT fk_career_events_meeting FOREIGN KEY (meeting_id) REFERENCES meetings(id)
+    CONSTRAINT fk_career_events_meeting FOREIGN KEY (meeting_id) REFERENCES meetings(id),
+    CONSTRAINT chk_career_events_type   CHECK (event_type IN ('ACHIEVEMENT','INITIATIVE','GROWTH','CONTRIBUTION','FEEDBACK'))
 );
 CREATE INDEX IF NOT EXISTS idx_career_events_user_id    ON career_events(user_id);
 CREATE INDEX IF NOT EXISTS idx_career_events_meeting_id ON career_events(meeting_id);
