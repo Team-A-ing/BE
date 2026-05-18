@@ -17,13 +17,25 @@ jwt:
   refresh-expiration-ms: 1209600000
 
 cors:
-  allowed-origins: http://localhost:3000
+  allowed-origins:
+    - "http://localhost:3000"
+    - "http://localhost:5173"
 
 openai:
   api-key: test-openai-key
+  whisper:
+    url: https://api.openai.test/v1/audio/transcriptions
+    model: whisper-1
+    max-file-size-mb: 25
+  gpt:
+    url: https://api.openai.test/v1/chat/completions
+    model: gpt-4o-mini
 
 claude:
   api-key: test-claude-key
+  url: https://api.anthropic.test/v1/messages
+  model: claude-sonnet-test
+  max-tokens: 1024
 
 supabase:
   url: http://localhost

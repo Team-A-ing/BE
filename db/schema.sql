@@ -50,14 +50,15 @@ ALTER TABLE users
 CREATE TABLE IF NOT EXISTS meetings (
     id          BIGSERIAL PRIMARY KEY,
     team_id     BIGINT NOT NULL,
+    title       VARCHAR(100) NOT NULL DEFAULT '1:1 Meeting',
     leader_id   BIGINT NOT NULL,
     member_id   BIGINT NOT NULL,
-    status      VARCHAR(20) NOT NULL DEFAULT 'PENDING',  -- PENDING|RECORDING|ANALYZING|COMPLETED|FAILED
+    status      VARCHAR(20) NOT NULL DEFAULT 'CREATED',  -- CREATED|TRANSCRIBING|ANALYZING|COMPLETED|FAILED
     created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_meetings_team   FOREIGN KEY (team_id)   REFERENCES teams(id),
     CONSTRAINT fk_meetings_leader FOREIGN KEY (leader_id) REFERENCES users(id),
     CONSTRAINT fk_meetings_member FOREIGN KEY (member_id) REFERENCES users(id),
-    CONSTRAINT chk_meetings_status CHECK (status IN ('PENDING','RECORDING','ANALYZING','COMPLETED','FAILED'))
+    CONSTRAINT chk_meetings_status CHECK (status IN ('CREATED','TRANSCRIBING','ANALYZING','COMPLETED','FAILED'))
 );
 CREATE INDEX IF NOT EXISTS idx_meetings_team_id   ON meetings(team_id);
 CREATE INDEX IF NOT EXISTS idx_meetings_leader_id ON meetings(leader_id);

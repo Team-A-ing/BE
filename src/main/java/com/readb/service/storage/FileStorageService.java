@@ -4,7 +4,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 public interface FileStorageService {
 
-    String upload(Long meetingId, MultipartFile file);
+    String upload(MultipartFile file, String path);
 
-    void delete(String fileUrl);
+    default void delete(String fileUrl) {
+        throw new UnsupportedOperationException("File delete is not implemented yet.");
+    }
 }

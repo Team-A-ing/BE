@@ -21,6 +21,9 @@ public class Meeting {
     @Column(name = "team_id", nullable = false)
     private Long teamId;
 
+    @Column(nullable = false, length = 100)
+    private String title;
+
     @Column(name = "leader_id", nullable = false)
     private Long leaderId;
 
@@ -30,7 +33,7 @@ public class Meeting {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
-    private MeetingStatus status = MeetingStatus.PENDING;
+    private MeetingStatus status = MeetingStatus.CREATED;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

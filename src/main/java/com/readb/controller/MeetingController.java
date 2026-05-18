@@ -33,8 +33,9 @@ public class MeetingController {
     public ApiResponse<Void> uploadRecording(
             @PathVariable Long meetingId,
             @AuthenticationPrincipal Long leaderId,
-            @RequestParam("file") MultipartFile file) {
-        meetingService.uploadRecording(meetingId, leaderId, file);
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "durationSec", required = false) Integer durationSec) {
+        meetingService.uploadRecording(meetingId, leaderId, file, durationSec);
         return ApiResponse.ok();
     }
 
