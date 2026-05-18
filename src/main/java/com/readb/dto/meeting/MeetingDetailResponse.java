@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 public record MeetingDetailResponse(
         Long meetingId,
         int round,
-        LocalDateTime scheduledAt,
+        LocalDateTime createdAt,
         Integer durationSec,
         String status,
         String leaderName,
