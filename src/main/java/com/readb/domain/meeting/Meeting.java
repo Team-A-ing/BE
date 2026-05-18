@@ -30,6 +30,9 @@ public class Meeting {
     @Column(name = "member_id", nullable = false)
     private Long memberId;
 
+    @Column(name = "scheduled_at")
+    private LocalDateTime scheduledAt;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default

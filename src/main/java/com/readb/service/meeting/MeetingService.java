@@ -4,11 +4,16 @@ import com.readb.common.exception.BusinessException;
 import com.readb.common.exception.ErrorCode;
 import com.readb.domain.meeting.Meeting;
 import com.readb.domain.meeting.MeetingStatus;
+import com.readb.domain.recording.Recording;
+import com.readb.domain.user.User;
 import com.readb.dto.meeting.MeetingCreateRequest;
 import com.readb.dto.meeting.MeetingCreateResponse;
+import com.readb.dto.meeting.MeetingDetailResponse;
 import com.readb.dto.meeting.MeetingStatusResponse;
 import com.readb.dto.meeting.RecordingPayload;
 import com.readb.repository.MeetingRepository;
+import com.readb.repository.RecordingRepository;
+import com.readb.repository.UserRepository;
 import com.readb.service.analysis.AnalysisOrchestrator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +38,8 @@ public class MeetingService {
     );
 
     private final MeetingRepository meetingRepository;
+    private final RecordingRepository recordingRepository;
+    private final UserRepository userRepository;
     private final AnalysisOrchestrator analysisOrchestrator;
 
     @Transactional
@@ -42,6 +49,7 @@ public class MeetingService {
                 .title(resolveTitle(request.title()))
                 .leaderId(leaderId)
                 .memberId(request.memberId())
+                .scheduledAt(request.scheduledAt())
                 .build();
 
         Meeting saved = meetingRepository.save(meeting);
@@ -69,13 +77,46 @@ public class MeetingService {
     public MeetingStatusResponse getStatus(Long meetingId) {
         Meeting meeting = findMeeting(meetingId);
         int progress = switch (meeting.getStatus()) {
-            case CREATED -> 0;
-            case TRANSCRIBING -> 40;
-            case ANALYZING -> 70;
+            // main 브랜치의 새로운 상태값 수용 (MeetingStatus.java에도 해당 Enum이 있는지 꼭 확인해주세요!)
+            case PENDING -> 0;        
+            case RECORDING -> 10;
+            case ANALYZING -> 50;
             case COMPLETED -> 100;
             case FAILED -> -1;
+            default -> 0; // 혹시 저희 브랜치의 TRANSCRIBING 등이 남아있다면 대비
         };
         return new MeetingStatusResponse(meetingId, meeting.getStatus().name(), progress);
+    }
+
+    @Transactional(readOnly = true)
+    public MeetingDetailResponse getMeeting(Long meetingId, Long userId) {
+        Meeting meeting = findMeeting(meetingId);
+
+        if (!userId.equals(meeting.getLeaderId()) && !userId.equals(meeting.getMemberId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+
+        int round = (int) meetingRepository.countByLeaderIdAndMemberIdAndIdLessThanEqual(
+                meeting.getLeaderId(), meeting.getMemberId(), meetingId);
+
+        User leader = userRepository.findById(meeting.getLeaderId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        User member = userRepository.findById(meeting.getMemberId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        Integer durationSec = recordingRepository.findByMeetingId(meetingId)
+                .map(Recording::getDurationSec)
+                .orElse(null);
+
+        return new MeetingDetailResponse(
+                meetingId,
+                round,
+                meeting.getScheduledAt(),
+                durationSec,
+                meeting.getStatus().name(),
+                leader.getName(),
+                member.getName()
+        );
     }
 
     private String resolveTitle(String title) {

@@ -3,6 +3,7 @@ package com.readb.controller;
 import com.readb.common.response.ApiResponse;
 import com.readb.dto.meeting.MeetingCreateRequest;
 import com.readb.dto.meeting.MeetingCreateResponse;
+import com.readb.dto.meeting.MeetingDetailResponse;
 import com.readb.dto.meeting.MeetingStatusResponse;
 import com.readb.service.meeting.MeetingService;
 import jakarta.validation.Valid;
@@ -13,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
-@RequestMapping("/api/meetings")
+@RequestMapping("/api/v1/meetings")
 @RequiredArgsConstructor
 public class MeetingController {
 
@@ -37,6 +38,13 @@ public class MeetingController {
             @RequestParam(value = "durationSec", required = false) Integer durationSec) {
         meetingService.uploadRecording(meetingId, leaderId, file, durationSec);
         return ApiResponse.ok();
+    }
+
+    @GetMapping("/{meetingId}")
+    public ApiResponse<MeetingDetailResponse> getMeeting(
+            @PathVariable Long meetingId,
+            @AuthenticationPrincipal Long userId) {
+        return ApiResponse.ok(meetingService.getMeeting(meetingId, userId));
     }
 
     @GetMapping("/{meetingId}/status")
