@@ -8,6 +8,7 @@ import com.readb.dto.analysis.AnalysisResultResponse;
 import com.readb.dto.analysis.BlockerKeyword;
 import com.readb.dto.analysis.CareerMemoryResponse;
 import com.readb.dto.analysis.RadarDataPoint;
+import com.readb.dto.team.TeamDashboardResponse;
 import com.readb.repository.AnalysisRepository;
 import com.readb.repository.MeetingRepository;
 import lombok.RequiredArgsConstructor;
@@ -101,6 +102,12 @@ public class AnalysisService {
                 new BlockerKeyword("역할 정의", 3),
                 new BlockerKeyword("툴 부족", 2)
         );
+    }
+
+    @Transactional(readOnly = true)
+    public TeamDashboardResponse getTeamDashboard(Long teamId) {
+        // TODO(5/7+): 팀의 실제 safetyScore, surveyScore 평균으로 teamHealthScore 산출.
+        return new TeamDashboardResponse(teamId, 74.0, "STABLE", List.of());
     }
 
     @Transactional(readOnly = true)
