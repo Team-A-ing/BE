@@ -5,6 +5,7 @@ import com.readb.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -20,6 +21,7 @@ import java.io.IOException;
 
 @Slf4j
 @Component
+@Profile("!mock")
 @RequiredArgsConstructor
 public class WhisperAdapter implements SttAdapter {
 

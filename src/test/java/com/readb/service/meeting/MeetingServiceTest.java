@@ -8,6 +8,8 @@ import com.readb.dto.meeting.MeetingCreateRequest;
 import com.readb.dto.meeting.MeetingCreateResponse;
 import com.readb.dto.meeting.RecordingPayload;
 import com.readb.repository.MeetingRepository;
+import com.readb.repository.RecordingRepository;
+import com.readb.repository.UserRepository;
 import com.readb.service.analysis.AnalysisOrchestrator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,13 +37,19 @@ class MeetingServiceTest {
     private MeetingRepository meetingRepository;
 
     @Mock
+    private RecordingRepository recordingRepository;
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
     private AnalysisOrchestrator analysisOrchestrator;
 
     private MeetingService meetingService;
 
     @BeforeEach
     void setUp() {
-        meetingService = new MeetingService(meetingRepository, analysisOrchestrator);
+        meetingService = new MeetingService(meetingRepository, recordingRepository, userRepository, analysisOrchestrator);
     }
 
     @Test
@@ -58,7 +66,7 @@ class MeetingServiceTest {
 
         MeetingCreateResponse response = meetingService.createMeeting(
                 100L,
-                new MeetingCreateRequest(1L, 200L, "Weekly 1:1")
+                new MeetingCreateRequest(1L, 200L, "Weekly 1:1", null)
         );
 
         assertThat(response.meetingId()).isEqualTo(10L);

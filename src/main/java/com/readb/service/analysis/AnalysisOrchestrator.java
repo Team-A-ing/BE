@@ -57,10 +57,13 @@ public class AnalysisOrchestrator {
                     .meetingId(meetingId)
                     .fileUrl(fileUrl)
                     .transcript(transcript)
+                    .durationSec(payload.durationSec())
                     .build();
             recordingRepository.save(recording);
 
             // 4단계: LLM 분석 → Analysis 저장
+            meeting.updateStatus(MeetingStatus.ANALYZING);
+            meetingRepository.save(meeting);
             analysisService.analyze(meetingId, transcript);
 
             // 5단계: 원본 파일 삭제 (보안) — fileUrl이 있을 때만 시도

@@ -77,13 +77,11 @@ public class MeetingService {
     public MeetingStatusResponse getStatus(Long meetingId) {
         Meeting meeting = findMeeting(meetingId);
         int progress = switch (meeting.getStatus()) {
-            // main 브랜치의 새로운 상태값 수용 (MeetingStatus.java에도 해당 Enum이 있는지 꼭 확인해주세요!)
-            case PENDING -> 0;        
-            case RECORDING -> 10;
+            case CREATED -> 0;
+            case TRANSCRIBING -> 30;
             case ANALYZING -> 50;
             case COMPLETED -> 100;
             case FAILED -> -1;
-            default -> 0; // 혹시 저희 브랜치의 TRANSCRIBING 등이 남아있다면 대비
         };
         return new MeetingStatusResponse(meetingId, meeting.getStatus().name(), progress);
     }
