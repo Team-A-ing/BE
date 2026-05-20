@@ -1,10 +1,12 @@
 package com.readb.controller;
 
 import com.readb.common.response.ApiResponse;
+import com.readb.dto.analysis.AnalysisResultResponse;
 import com.readb.dto.meeting.MeetingCreateRequest;
 import com.readb.dto.meeting.MeetingCreateResponse;
 import com.readb.dto.meeting.MeetingDetailResponse;
 import com.readb.dto.meeting.MeetingStatusResponse;
+import com.readb.service.analysis.AnalysisService;
 import com.readb.service.meeting.MeetingService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class MeetingController {
 
     private final MeetingService meetingService;
+    private final AnalysisService analysisService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -34,8 +37,9 @@ public class MeetingController {
     public ApiResponse<Void> uploadRecording(
             @PathVariable Long meetingId,
             @AuthenticationPrincipal Long leaderId,
-            @RequestParam("file") MultipartFile file) {
-        meetingService.uploadRecording(meetingId, leaderId, file);
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "durationSec", required = false) Integer durationSec) {
+        meetingService.uploadRecording(meetingId, leaderId, file, durationSec);
         return ApiResponse.ok();
     }
 
@@ -49,5 +53,15 @@ public class MeetingController {
     @GetMapping("/{meetingId}/status")
     public ApiResponse<MeetingStatusResponse> getStatus(@PathVariable Long meetingId) {
         return ApiResponse.ok(meetingService.getStatus(meetingId));
+    }
+
+    @GetMapping("/{meetingId}/leader-report")
+    public ApiResponse<AnalysisResultResponse> getLeaderReport(@PathVariable Long meetingId) {
+        return ApiResponse.ok(analysisService.getResult(meetingId));
+    }
+
+    @GetMapping("/{meetingId}/member-report")
+    public ApiResponse<AnalysisResultResponse> getMemberReport(@PathVariable Long meetingId) {
+        return ApiResponse.ok(analysisService.getResult(meetingId));
     }
 }

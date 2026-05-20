@@ -26,8 +26,8 @@ public class SurveyController {
         return ApiResponse.ok();
     }
 
-    @GetMapping
-    public ApiResponse<SurveyResponse> getSurvey(@RequestParam Long meetingId) {
+    @GetMapping("/{meetingId}")
+    public ApiResponse<SurveyResponse> getSurvey(@PathVariable Long meetingId) {
         return ApiResponse.ok(surveyService.getSurvey(meetingId));
     }
 }

@@ -57,10 +57,13 @@ public class AnalysisOrchestrator {
                     .meetingId(meetingId)
                     .fileUrl(fileUrl)
                     .transcript(transcript)
+                    .durationSec(payload.durationSec())
                     .build();
             recordingRepository.save(recording);
 
             // 4단계: LLM 분석 → Analysis 저장
+            meeting.updateStatus(MeetingStatus.ANALYZING);
+            meetingRepository.save(meeting);
             analysisService.analyze(meetingId, transcript);
 
             // 5단계: 원본 파일 삭제 (보안) — fileUrl이 있을 때만 시도
@@ -84,7 +87,7 @@ public class AnalysisOrchestrator {
 
     private String tryUpload(Long meetingId, MultipartFile file) {
         try {
-            return fileStorageService.upload(meetingId, file);
+            return fileStorageService.upload(file, "meetings/%d/%s".formatted(meetingId, file.getOriginalFilename()));
         } catch (UnsupportedOperationException e) {
             log.warn("FileStorageService 미구현 — Storage 단계 건너뜀 (meetingId={})", meetingId);
             return null;
