@@ -7,7 +7,8 @@ public record UserProfileResponse(
         String email,
         String name,
         String role,
-        Long teamId
+        Long teamId,
+        String inviteCode
 ) {
     public static UserProfileResponse from(User user) {
         return new UserProfileResponse(
@@ -15,7 +16,19 @@ public record UserProfileResponse(
                 user.getEmail(),
                 user.getName(),
                 user.getRole().name(),
-                user.getTeamId()
+                user.getTeamId(),
+                null
+        );
+    }
+
+    public static UserProfileResponse from(User user, String inviteCode) {
+        return new UserProfileResponse(
+                user.getId(),
+                user.getEmail(),
+                user.getName(),
+                user.getRole().name(),
+                user.getTeamId(),
+                inviteCode
         );
     }
 }
