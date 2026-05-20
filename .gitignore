@@ -2,7 +2,6 @@
 .gradle/
 .gradle-user-home/
 build/
-!gradle/wrapper/gradle-wrapper.jar
 
 # IDE compiled output
 bin/
@@ -20,6 +19,7 @@ out/
 *.war
 *.nar
 *.ear
+!gradle/wrapper/gradle-wrapper.jar
 
 # Logs
 *.log
