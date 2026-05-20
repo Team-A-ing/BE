@@ -169,11 +169,11 @@ public class AnalysisService {
         Map<String, Object> step2 = parseJson(step2Raw);
         log.info("Step2(GPT-mini) 완료. meetingId={}", meetingId);
 
-        // Step 3: Claude — 스코어링 + 피드백
+        // Step 3: GPT-mini — 스코어링 + 피드백
         String step3UserPrompt = buildStep3UserPrompt(step2, surveyScore, durationSec, prevPromises);
-        String step3Raw = claudeAdapter.chat(STEP3_SYSTEM, step3UserPrompt);
+        String step3Raw = gptAdapter.chat(STEP3_SYSTEM, step3UserPrompt);
         Map<String, Object> step3 = parseJson(step3Raw);
-        log.info("Step3(Claude) 완료. meetingId={}", meetingId);
+        log.info("Step3(GPT-mini) 완료. meetingId={}", meetingId);
 
         // 저장 (idempotent)
         analysisRepository.findByMeetingId(meetingId).ifPresent(analysisRepository::delete);

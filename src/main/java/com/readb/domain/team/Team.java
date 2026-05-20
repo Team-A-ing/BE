@@ -24,6 +24,9 @@ public class Team {
     @Column(name = "leader_id", nullable = false)
     private Long leaderId;
 
+    @Column(name = "invite_code", unique = true)
+    private String inviteCode;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
