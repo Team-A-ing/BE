@@ -1,7 +1,6 @@
 package com.readb.service.analysis;
 
 import com.readb.adapter.stt.SttAdapter;
-import com.readb.adapter.llm.LlmAdapter;
 import com.readb.common.exception.BusinessException;
 import com.readb.common.exception.ErrorCode;
 import com.readb.common.util.ByteArrayMultipartFile;
@@ -27,7 +26,6 @@ public class AnalysisOrchestrator {
     private final RecordingRepository recordingRepository;
     private final FileStorageService fileStorageService;
     private final SttAdapter sttAdapter;
-    private final LlmAdapter llmAdapter;
     private final AnalysisService analysisService;
 
     @Async("analysisExecutor")

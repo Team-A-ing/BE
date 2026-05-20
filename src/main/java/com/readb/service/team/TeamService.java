@@ -6,6 +6,8 @@ import com.readb.domain.team.Team;
 import com.readb.domain.user.User;
 import com.readb.dto.team.TeamCreateRequest;
 import com.readb.dto.team.TeamCreateResponse;
+import com.readb.dto.team.TeamJoinRequest;
+import com.readb.dto.team.TeamJoinResponse;
 import com.readb.dto.team.TeamMemberResponse;
 import com.readb.repository.TeamRepository;
 import com.readb.repository.UserRepository;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -31,15 +34,35 @@ public class TeamService {
             throw new BusinessException(ErrorCode.ALREADY_IN_TEAM);
         }
 
+        String inviteCode = "READB-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+
         Team team = Team.builder()
                 .name(request.name())
                 .leaderId(leaderId)
+                .inviteCode(inviteCode)
                 .build();
         Team saved = teamRepository.save(team);
 
         leader.assignTeam(saved.getId());
 
         return TeamCreateResponse.from(saved);
+    }
+
+    @Transactional
+    public TeamJoinResponse joinTeam(Long memberId, TeamJoinRequest request) {
+        User member = userRepository.findById(memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        if (member.getTeamId() != null) {
+            throw new BusinessException(ErrorCode.ALREADY_IN_TEAM);
+        }
+
+        Team team = teamRepository.findByInviteCode(request.inviteCode())
+                .orElseThrow(() -> new BusinessException(ErrorCode.TEAM_NOT_FOUND));
+
+        member.assignTeam(team.getId());
+
+        return new TeamJoinResponse(team.getId(), team.getName());
     }
 
     @Transactional(readOnly = true)
