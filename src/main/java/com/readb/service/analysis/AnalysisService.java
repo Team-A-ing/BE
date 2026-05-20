@@ -144,41 +144,62 @@ public class AnalysisService {
 
     // ── 파이프라인 ────────────────────────────────────────────────────────────
 
-    @Transactional
     public void analyze(Long meetingId, String transcript) {
-        Meeting meeting = meetingRepository.findById(meetingId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
+        // DB 조회는 짧은 별도 트랜잭션으로
+        Meeting meeting = loadMeeting(meetingId);
+        Double surveyScore = loadSurveyScore(meetingId, meeting.getMemberId());
+        Integer durationSec = loadDurationSec(meetingId);
+        List<Promise> prevPromises = loadPrevPromises(meeting, meetingId);
 
-        Double surveyScore = surveyRepository
-                .findByMeetingIdAndMemberId(meetingId, meeting.getMemberId())
-                .map(Survey::getScores)
-                .map(this::computeSurveyScore)
-                .orElse(null);
-
-        Integer durationSec = recordingRepository.findByMeetingId(meetingId)
-                .map(Recording::getDurationSec)
-                .orElse(null);
-
-        List<Meeting> prevMeetings = meetingRepository
-                .findByLeaderIdAndMemberIdAndIdLessThan(meeting.getLeaderId(), meeting.getMemberId(), meetingId);
-        List<Promise> prevPromises = prevMeetings.isEmpty() ? List.of()
-                : promiseRepository.findByMeetingIdIn(prevMeetings.stream().map(Meeting::getId).toList());
-
-        // Step 2: GPT-mini — 구조화
+        // LLM 호출 — 트랜잭션 밖 (seconds 단위 네트워크 I/O)
         String step2Raw = gptAdapter.chat(STEP2_SYSTEM, transcript);
         Map<String, Object> step2 = parseJson(step2Raw);
         log.info("Step2(GPT-mini) 완료. meetingId={}", meetingId);
 
-        // Step 3: GPT-mini — 스코어링 + 피드백
         String step3UserPrompt = buildStep3UserPrompt(step2, surveyScore, durationSec, prevPromises);
         String step3Raw = gptAdapter.chat(STEP3_SYSTEM, step3UserPrompt);
         Map<String, Object> step3 = parseJson(step3Raw);
         log.info("Step3(GPT-mini) 완료. meetingId={}", meetingId);
 
-        // 저장 (idempotent)
+        // DB 저장만 트랜잭션
+        persistResults(meetingId, meeting, step2, step3);
+    }
+
+    @Transactional(readOnly = true)
+    protected Meeting loadMeeting(Long meetingId) {
+        return meetingRepository.findById(meetingId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
+    }
+
+    @Transactional(readOnly = true)
+    protected Double loadSurveyScore(Long meetingId, Long memberId) {
+        return surveyRepository.findByMeetingIdAndMemberId(meetingId, memberId)
+                .map(Survey::getScores)
+                .map(this::computeSurveyScore)
+                .orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    protected Integer loadDurationSec(Long meetingId) {
+        return recordingRepository.findByMeetingId(meetingId)
+                .map(Recording::getDurationSec)
+                .orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    protected List<Promise> loadPrevPromises(Meeting meeting, Long meetingId) {
+        List<Meeting> prevMeetings = meetingRepository
+                .findByLeaderIdAndMemberIdAndIdLessThan(meeting.getLeaderId(), meeting.getMemberId(), meetingId);
+        return prevMeetings.isEmpty() ? List.of()
+                : promiseRepository.findByMeetingIdIn(prevMeetings.stream().map(Meeting::getId).toList());
+    }
+
+    @Transactional
+    protected void persistResults(Long meetingId, Meeting meeting, Map<String, Object> step2, Map<String, Object> step3) {
         analysisRepository.findByMeetingId(meetingId).ifPresent(analysisRepository::delete);
         analysisRepository.save(buildAnalysis(meetingId, step2, step3));
 
+        promiseRepository.deleteByMeetingId(meetingId);
         savePromises(meetingId, meeting, step2);
     }
 

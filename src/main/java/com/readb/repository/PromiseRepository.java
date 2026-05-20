@@ -12,4 +12,6 @@ public interface PromiseRepository extends JpaRepository<Promise, Long> {
     List<Promise> findByOwnerIdOrderByCreatedAtDesc(Long ownerId);
 
     List<Promise> findByMeetingIdIn(List<Long> meetingIds);
+
+    void deleteByMeetingId(Long meetingId);
 }
