@@ -14,19 +14,24 @@ import com.readb.dto.analysis.BlockerKeyword;
 import com.readb.dto.analysis.CareerMemoryResponse;
 import com.readb.dto.analysis.RadarDataPoint;
 import com.readb.dto.team.TeamDashboardResponse;
+import com.readb.domain.user.User;
 import com.readb.repository.AnalysisRepository;
 import com.readb.repository.MeetingRepository;
 import com.readb.repository.PromiseRepository;
 import com.readb.repository.RecordingRepository;
 import com.readb.repository.SurveyRepository;
+import com.readb.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -119,6 +124,7 @@ public class AnalysisService {
     private final SurveyRepository surveyRepository;
     private final RecordingRepository recordingRepository;
     private final PromiseRepository promiseRepository;
+    private final UserRepository userRepository;
     private final LlmAdapter gptAdapter;
     private final LlmAdapter claudeAdapter;
     private final ObjectMapper objectMapper;
@@ -129,6 +135,7 @@ public class AnalysisService {
             SurveyRepository surveyRepository,
             RecordingRepository recordingRepository,
             PromiseRepository promiseRepository,
+            UserRepository userRepository,
             @Qualifier("gptMiniAdapter") LlmAdapter gptAdapter,
             @Qualifier("claudeAdapter") LlmAdapter claudeAdapter,
             ObjectMapper objectMapper) {
@@ -137,6 +144,7 @@ public class AnalysisService {
         this.surveyRepository = surveyRepository;
         this.recordingRepository = recordingRepository;
         this.promiseRepository = promiseRepository;
+        this.userRepository = userRepository;
         this.gptAdapter = gptAdapter;
         this.claudeAdapter = claudeAdapter;
         this.objectMapper = objectMapper;
@@ -315,31 +323,87 @@ public class AnalysisService {
 
     @Transactional(readOnly = true)
     public TeamDashboardResponse getTeamDashboard(Long teamId) {
-        // TODO: 팀 실제 데이터 집계
-        return new TeamDashboardResponse(teamId, 74.0, "STABLE", List.of());
+        List<Long> meetingIds = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId)
+                .stream().map(Meeting::getId).toList();
+        if (meetingIds.isEmpty()) {
+            return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of());
+        }
+
+        List<Double> scores = analysisRepository.findByMeetingIdIn(meetingIds)
+                .stream()
+                .map(Analysis::getSafetyScore)
+                .filter(s -> s != null)
+                .toList();
+        if (scores.isEmpty()) {
+            return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of());
+        }
+
+        double avg = scores.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        double rounded = Math.round(avg * 10.0) / 10.0;
+
+        String trend;
+        if (scores.size() < 2) {
+            trend = "STABLE";
+        } else {
+            // 최근 절반 vs 이전 절반 평균 비교
+            int half = scores.size() / 2;
+            double recent = scores.subList(0, half).stream().mapToDouble(Double::doubleValue).average().orElse(0);
+            double previous = scores.subList(half, scores.size()).stream().mapToDouble(Double::doubleValue).average().orElse(0);
+            if (recent > previous + 5) trend = "IMPROVING";
+            else if (recent < previous - 5) trend = "DECLINING";
+            else trend = "STABLE";
+        }
+
+        return new TeamDashboardResponse(teamId, rounded, trend, List.of());
     }
 
     @Transactional(readOnly = true)
     public List<RadarDataPoint> getRadarData(Long teamId) {
-        // TODO: 팀 최근 analyses 멤버별 집계
-        return List.of(
-                new RadarDataPoint(1L, "김안정", 82.0, 78.0, 4.0),
-                new RadarDataPoint(2L, "이조용", 85.0, 45.0, 40.0),
-                new RadarDataPoint(3L, "박보수", 40.0, 70.0, -30.0),
-                new RadarDataPoint(4L, "최명시", 35.0, 30.0, 5.0)
-        );
+        List<User> members = userRepository.findByTeamId(teamId);
+        List<RadarDataPoint> result = new ArrayList<>();
+
+        for (User member : members) {
+            List<Long> memberMeetingIds = meetingRepository.findByMemberIdOrderByCreatedAtDesc(member.getId())
+                    .stream().map(Meeting::getId).toList();
+            if (memberMeetingIds.isEmpty()) continue;
+
+            // 멤버의 가장 최근 analysis
+            analysisRepository.findTopByMeetingIdInOrderByMeetingIdDesc(memberMeetingIds)
+                    .ifPresent(analysis -> {
+                        Double safetyScore = analysis.getSafetyScore();
+                        // 해당 미팅의 서베이에서 surveyScore 조회
+                        Double surveyScore = surveyRepository
+                                .findByMeetingIdAndMemberId(analysis.getMeetingId(), member.getId())
+                                .map(Survey::getScores)
+                                .map(this::computeSurveyScore)
+                                .orElse(null);
+                        Double honestyGap = (surveyScore != null && safetyScore != null)
+                                ? Math.round((surveyScore - safetyScore) * 10.0) / 10.0
+                                : null;
+                        result.add(new RadarDataPoint(member.getId(), member.getName(),
+                                surveyScore, safetyScore, honestyGap));
+                    });
+        }
+        return result;
     }
 
     @Transactional(readOnly = true)
     public List<BlockerKeyword> getBlockerData(Long teamId) {
-        // TODO: analyses.blocker_keywords 팀 단위 집계
-        return List.of(
-                new BlockerKeyword("일정 압박", 7),
-                new BlockerKeyword("QA 리소스", 5),
-                new BlockerKeyword("커뮤니케이션", 4),
-                new BlockerKeyword("역할 정의", 3),
-                new BlockerKeyword("툴 부족", 2)
-        );
+        List<Long> meetingIds = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId)
+                .stream().map(Meeting::getId).toList();
+        if (meetingIds.isEmpty()) return List.of();
+
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        analysisRepository.findByMeetingIdIn(meetingIds).forEach(analysis -> {
+            List<String> keywords = analysis.getBlockerKeywords();
+            if (keywords == null) return;
+            keywords.forEach(kw -> counts.merge(kw, 1, Integer::sum));
+        });
+
+        return counts.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .map(e -> new BlockerKeyword(e.getKey(), e.getValue()))
+                .toList();
     }
 
     @Transactional(readOnly = true)
