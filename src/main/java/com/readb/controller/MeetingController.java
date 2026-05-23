@@ -28,10 +28,9 @@ public class MeetingController {
 
     @GetMapping
     public ApiResponse<List<MeetingListResponse>> getMeetings(
-            @RequestParam(required = false) Long teamId,
             @RequestParam(required = false) Long memberId,
             @AuthenticationPrincipal Long userId) {
-        return ApiResponse.ok(meetingService.getMeetings(teamId, memberId, userId));
+        return ApiResponse.ok(meetingService.getMeetings(memberId, userId));
     }
 
     @PostMapping

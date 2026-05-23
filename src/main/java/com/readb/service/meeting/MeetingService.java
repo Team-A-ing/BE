@@ -91,15 +91,12 @@ public class MeetingService {
     }
 
     @Transactional(readOnly = true)
-    public List<MeetingListResponse> getMeetings(Long teamId, Long memberId, Long userId) {
-        List<Meeting> meetings;
-        if (teamId != null) {
-            meetings = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId);
-        } else if (memberId != null) {
-            meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
-        } else {
-            meetings = meetingRepository.findByLeaderIdOrderByCreatedAtDesc(userId);
-        }
+    public List<MeetingListResponse> getMeetings(Long memberId, Long userId) {
+        // 리더: 자신이 진행한 1on1 목록 (memberId 필터 선택)
+        // 멤버: 자신이 참여한 1on1 목록
+        List<Meeting> meetings = (memberId != null)
+                ? meetingRepository.findByLeaderIdAndMemberIdOrderByCreatedAtDesc(userId, memberId)
+                : meetingRepository.findByLeaderIdOrderByCreatedAtDesc(userId);
 
         return meetings.stream().map(m -> {
             int round = (int) meetingRepository.countByLeaderIdAndMemberIdAndIdLessThanEqual(
