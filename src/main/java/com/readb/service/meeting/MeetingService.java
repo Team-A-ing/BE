@@ -9,10 +9,12 @@ import com.readb.domain.user.User;
 import com.readb.dto.meeting.MeetingCreateRequest;
 import com.readb.dto.meeting.MeetingCreateResponse;
 import com.readb.dto.meeting.MeetingDetailResponse;
+import com.readb.dto.meeting.MeetingListResponse;
 import com.readb.dto.meeting.MeetingStatusResponse;
 import com.readb.dto.meeting.RecordingPayload;
 import com.readb.repository.MeetingRepository;
 import com.readb.repository.RecordingRepository;
+import com.readb.repository.SurveyRepository;
 import com.readb.repository.UserRepository;
 import com.readb.service.analysis.AnalysisOrchestrator;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 
 @Slf4j
@@ -40,6 +43,7 @@ public class MeetingService {
     private final MeetingRepository meetingRepository;
     private final RecordingRepository recordingRepository;
     private final UserRepository userRepository;
+    private final SurveyRepository surveyRepository;
     private final AnalysisOrchestrator analysisOrchestrator;
 
     @Transactional
@@ -87,6 +91,29 @@ public class MeetingService {
     }
 
     @Transactional(readOnly = true)
+    public List<MeetingListResponse> getMeetings(Long teamId, Long memberId, Long userId) {
+        List<Meeting> meetings;
+        if (teamId != null) {
+            meetings = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId);
+        } else if (memberId != null) {
+            meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
+        } else {
+            meetings = meetingRepository.findByLeaderIdOrderByCreatedAtDesc(userId);
+        }
+
+        return meetings.stream().map(m -> {
+            int round = (int) meetingRepository.countByLeaderIdAndMemberIdAndIdLessThanEqual(
+                    m.getLeaderId(), m.getMemberId(), m.getId());
+            String memberName = userRepository.findById(m.getMemberId())
+                    .map(User::getName).orElse("");
+            Integer durationSec = recordingRepository.findByMeetingId(m.getId())
+                    .map(Recording::getDurationSec).orElse(null);
+            return new MeetingListResponse(m.getId(), round, memberName,
+                    m.getScheduledAt(), durationSec, m.getStatus().name());
+        }).toList();
+    }
+
+    @Transactional(readOnly = true)
     public MeetingDetailResponse getMeeting(Long meetingId, Long userId) {
         Meeting meeting = findMeeting(meetingId);
 
@@ -106,6 +133,9 @@ public class MeetingService {
                 .map(Recording::getDurationSec)
                 .orElse(null);
 
+        boolean surveySubmitted = surveyRepository.existsByMeetingIdAndMemberId(
+                meetingId, meeting.getMemberId());
+
         return new MeetingDetailResponse(
                 meetingId,
                 round,
@@ -113,7 +143,8 @@ public class MeetingService {
                 durationSec,
                 meeting.getStatus().name(),
                 leader.getName(),
-                member.getName()
+                member.getName(),
+                surveySubmitted
         );
     }
 
