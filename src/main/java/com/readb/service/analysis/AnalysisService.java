@@ -324,7 +324,7 @@ public class AnalysisService {
     @Transactional(readOnly = true)
     public TeamDashboardResponse getTeamDashboard(Long teamId) {
         List<Long> meetingIds = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId)
-                .stream().map(Meeting::getId).toList();
+                .stream().limit(20).map(Meeting::getId).toList();
         if (meetingIds.isEmpty()) {
             return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of());
         }
