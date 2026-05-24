@@ -5,6 +5,7 @@ import com.readb.dto.analysis.AnalysisResultResponse;
 import com.readb.dto.meeting.MeetingCreateRequest;
 import com.readb.dto.meeting.MeetingCreateResponse;
 import com.readb.dto.meeting.MeetingDetailResponse;
+import com.readb.dto.meeting.MeetingListResponse;
 import com.readb.dto.meeting.MeetingStatusResponse;
 import com.readb.service.analysis.AnalysisService;
 import com.readb.service.meeting.MeetingService;
@@ -15,6 +16,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/meetings")
 @RequiredArgsConstructor
@@ -22,6 +25,13 @@ public class MeetingController {
 
     private final MeetingService meetingService;
     private final AnalysisService analysisService;
+
+    @GetMapping
+    public ApiResponse<List<MeetingListResponse>> getMeetings(
+            @RequestParam(required = false) Long memberId,
+            @AuthenticationPrincipal Long userId) {
+        return ApiResponse.ok(meetingService.getMeetings(memberId, userId));
+    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
