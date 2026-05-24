@@ -2,17 +2,25 @@ package com.readb.service.meeting;
 
 import com.readb.common.exception.BusinessException;
 import com.readb.common.exception.ErrorCode;
+import com.readb.domain.career.CareerEvent;
+import com.readb.domain.career.CareerEventType;
 import com.readb.domain.meeting.Meeting;
 import com.readb.domain.meeting.MeetingStatus;
+import com.readb.domain.promise.Promise;
 import com.readb.domain.recording.Recording;
 import com.readb.domain.user.User;
+import com.readb.dto.meeting.ConfirmedAchievementResponse;
+import com.readb.dto.meeting.LeaderPromiseResponse;
 import com.readb.dto.meeting.MeetingCreateRequest;
 import com.readb.dto.meeting.MeetingCreateResponse;
 import com.readb.dto.meeting.MeetingDetailResponse;
 import com.readb.dto.meeting.MeetingListResponse;
 import com.readb.dto.meeting.MeetingStatusResponse;
+import com.readb.dto.meeting.MemberReportResponse;
 import com.readb.dto.meeting.RecordingPayload;
+import com.readb.repository.CareerEventRepository;
 import com.readb.repository.MeetingRepository;
+import com.readb.repository.PromiseRepository;
 import com.readb.repository.RecordingRepository;
 import com.readb.repository.SurveyRepository;
 import com.readb.repository.UserRepository;
@@ -47,6 +55,8 @@ public class MeetingService {
     private final UserRepository userRepository;
     private final SurveyRepository surveyRepository;
     private final AnalysisOrchestrator analysisOrchestrator;
+    private final CareerEventRepository careerEventRepository;
+    private final PromiseRepository promiseRepository;
 
     @Transactional
     public MeetingCreateResponse createMeeting(Long leaderId, MeetingCreateRequest request) {
@@ -150,6 +160,58 @@ public class MeetingService {
                 member.getName(),
                 surveySubmitted
         );
+    }
+
+    @Transactional(readOnly = true)
+    public MemberReportResponse getMemberReport(Long meetingId, Long userId) {
+        Meeting meeting = findMeeting(meetingId);
+
+        if (!userId.equals(meeting.getLeaderId()) && !userId.equals(meeting.getMemberId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+
+        int round = (int) meetingRepository.countByLeaderIdAndMemberIdAndIdLessThanEqual(
+                meeting.getLeaderId(), meeting.getMemberId(), meetingId);
+
+        User leader = userRepository.findById(meeting.getLeaderId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        Integer durationSec = recordingRepository.findByMeetingId(meetingId)
+                .map(Recording::getDurationSec)
+                .orElse(null);
+
+        List<CareerEvent> events = careerEventRepository.findByMeetingIdAndEventTypeIn(
+                meetingId, List.of(CareerEventType.ACHIEVEMENT, CareerEventType.PROPOSAL_ADOPTED));
+
+        List<Promise> promises = promiseRepository.findByMeetingIdAndOwnerId(meetingId, meeting.getLeaderId());
+
+        List<ConfirmedAchievementResponse> confirmedAchievements = events.stream()
+                .map(e -> new ConfirmedAchievementResponse(
+                        e.getId(),
+                        e.getEventType().name(),
+                        e.getTitle(),
+                        e.getDescription(),
+                        e.getEvidence() != null ? toStr(e.getEvidence().get("impactMetric")) : null,
+                        e.getEvidence() != null ? toStr(e.getEvidence().get("quote")) : null,
+                        leader.getName()
+                )).toList();
+
+        List<LeaderPromiseResponse> leaderPromises = promises.stream()
+                .map(p -> new LeaderPromiseResponse(
+                        p.getId(),
+                        p.getContent(),
+                        null,
+                        p.getDeadline(),
+                        p.getStatus().name()
+                )).toList();
+
+        return new MemberReportResponse(
+                meetingId, round, leader.getName(), meeting.getScheduledAt(),
+                durationSec, confirmedAchievements, leaderPromises);
+    }
+
+    private static String toStr(Object val) {
+        return val == null ? null : val.toString();
     }
 
     private String resolveTitle(String title) {
