@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -331,6 +332,7 @@ public class AnalysisService {
 
         List<Double> scores = analysisRepository.findByMeetingIdIn(meetingIds)
                 .stream()
+                .sorted(Comparator.comparingLong(Analysis::getMeetingId).reversed())
                 .map(Analysis::getSafetyScore)
                 .filter(s -> s != null)
                 .toList();
@@ -360,29 +362,42 @@ public class AnalysisService {
     @Transactional(readOnly = true)
     public List<RadarDataPoint> getRadarData(Long teamId) {
         List<User> members = userRepository.findByTeamId(teamId);
+        if (members.isEmpty()) return List.of();
+
+        List<Long> memberIds = members.stream().map(User::getId).toList();
+
+        // 멤버별 최신 meetingId 추출 — 1 쿼리
+        Map<Long, Long> latestMeetingIdByMember = new LinkedHashMap<>();
+        meetingRepository.findByMemberIdInOrderByCreatedAtDesc(memberIds)
+                .forEach(m -> latestMeetingIdByMember.putIfAbsent(m.getMemberId(), m.getId()));
+
+        List<Long> latestMeetingIds = new ArrayList<>(latestMeetingIdByMember.values());
+        if (latestMeetingIds.isEmpty()) return List.of();
+
+        // bulk 조회 — 각 1 쿼리
+        Map<Long, Analysis> analysisByMeetingId = analysisRepository.findByMeetingIdIn(latestMeetingIds)
+                .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
+        Map<Long, Survey> surveyByMeetingId = surveyRepository.findByMeetingIdIn(latestMeetingIds)
+                .stream().collect(Collectors.toMap(Survey::getMeetingId, s -> s));
+
+        Map<Long, User> userById = members.stream().collect(Collectors.toMap(User::getId, u -> u));
         List<RadarDataPoint> result = new ArrayList<>();
 
-        for (User member : members) {
-            List<Long> memberMeetingIds = meetingRepository.findByMemberIdOrderByCreatedAtDesc(member.getId())
-                    .stream().map(Meeting::getId).toList();
-            if (memberMeetingIds.isEmpty()) continue;
+        for (Map.Entry<Long, Long> entry : latestMeetingIdByMember.entrySet()) {
+            Long memberId = entry.getKey();
+            Long meetingId = entry.getValue();
+            Analysis analysis = analysisByMeetingId.get(meetingId);
+            if (analysis == null) continue;
 
-            // 멤버의 가장 최근 analysis
-            analysisRepository.findTopByMeetingIdInOrderByMeetingIdDesc(memberMeetingIds)
-                    .ifPresent(analysis -> {
-                        Double safetyScore = analysis.getSafetyScore();
-                        // 해당 미팅의 서베이에서 surveyScore 조회
-                        Double surveyScore = surveyRepository
-                                .findByMeetingIdAndMemberId(analysis.getMeetingId(), member.getId())
-                                .map(Survey::getScores)
-                                .map(this::computeSurveyScore)
-                                .orElse(null);
-                        Double honestyGap = (surveyScore != null && safetyScore != null)
-                                ? Math.round((surveyScore - safetyScore) * 10.0) / 10.0
-                                : null;
-                        result.add(new RadarDataPoint(member.getId(), member.getName(),
-                                surveyScore, safetyScore, honestyGap));
-                    });
+            Double safetyScore = analysis.getSafetyScore();
+            Survey survey = surveyByMeetingId.get(meetingId);
+            Double surveyScore = survey != null ? computeSurveyScore(survey.getScores()) : null;
+            Double honestyGap = (surveyScore != null && safetyScore != null)
+                    ? Math.round((surveyScore - safetyScore) * 10.0) / 10.0
+                    : null;
+
+            User member = userById.get(memberId);
+            result.add(new RadarDataPoint(memberId, member.getName(), surveyScore, safetyScore, honestyGap));
         }
         return result;
     }
