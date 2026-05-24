@@ -17,4 +17,6 @@ public interface MeetingRepository extends JpaRepository<Meeting, Long> {
     long countByLeaderIdAndMemberIdAndIdLessThanEqual(Long leaderId, Long memberId, Long id);
 
     List<Meeting> findByLeaderIdAndMemberIdAndIdLessThan(Long leaderId, Long memberId, Long id);
+
+    List<Meeting> findByMemberIdInOrderByCreatedAtDesc(List<Long> memberIds);
 }
