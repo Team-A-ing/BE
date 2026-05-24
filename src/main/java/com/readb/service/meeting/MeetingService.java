@@ -26,8 +26,10 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 @Slf4j
 @Service
@@ -92,20 +94,25 @@ public class MeetingService {
 
     @Transactional(readOnly = true)
     public List<MeetingListResponse> getMeetings(Long memberId, Long userId) {
-        // 리더: 자신이 진행한 1on1 목록 (memberId 필터 선택)
-        // 멤버: 자신이 참여한 1on1 목록
-        List<Meeting> meetings = (memberId != null)
-                ? meetingRepository.findByLeaderIdAndMemberIdOrderByCreatedAtDesc(userId, memberId)
-                : meetingRepository.findByLeaderIdOrderByCreatedAtDesc(userId);
+        List<Meeting> meetings;
+        if (memberId != null) {
+            meetings = meetingRepository.findByLeaderIdAndMemberIdOrderByCreatedAtDesc(userId, memberId);
+        } else {
+            meetings = Stream.concat(
+                    meetingRepository.findByLeaderIdOrderByCreatedAtDesc(userId).stream(),
+                    meetingRepository.findByMemberIdOrderByCreatedAtDesc(userId).stream()
+            ).sorted(Comparator.comparing(Meeting::getCreatedAt).reversed()).toList();
+        }
 
         return meetings.stream().map(m -> {
             int round = (int) meetingRepository.countByLeaderIdAndMemberIdAndIdLessThanEqual(
                     m.getLeaderId(), m.getMemberId(), m.getId());
-            String memberName = userRepository.findById(m.getMemberId())
+            Long partnerId = userId.equals(m.getLeaderId()) ? m.getMemberId() : m.getLeaderId();
+            String partnerName = userRepository.findById(partnerId)
                     .map(User::getName).orElse("");
             Integer durationSec = recordingRepository.findByMeetingId(m.getId())
                     .map(Recording::getDurationSec).orElse(null);
-            return new MeetingListResponse(m.getId(), round, memberName,
+            return new MeetingListResponse(m.getId(), round, partnerName,
                     m.getScheduledAt(), durationSec, m.getStatus().name());
         }).toList();
     }
