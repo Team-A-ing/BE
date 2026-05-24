@@ -2,6 +2,8 @@ package com.readb.controller;
 
 import com.readb.common.response.ApiResponse;
 import com.readb.dto.analysis.CareerMemoryResponse;
+import com.readb.dto.analysis.PortfolioResponse;
+import com.readb.dto.analysis.SpeechTrendResponse;
 import com.readb.service.analysis.AnalysisService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -20,5 +22,17 @@ public class MemberController {
     public ApiResponse<List<CareerMemoryResponse>> getCareerMemory(
             @AuthenticationPrincipal Long memberId) {
         return ApiResponse.ok(analysisService.getCareerMemory(memberId));
+    }
+
+    @GetMapping("/members/me/speech-trend")
+    public ApiResponse<List<SpeechTrendResponse>> getSpeechTrend(
+            @AuthenticationPrincipal Long memberId) {
+        return ApiResponse.ok(analysisService.getSpeechTrend(memberId));
+    }
+
+    @GetMapping("/members/me/portfolio")
+    public ApiResponse<PortfolioResponse> getPortfolio(
+            @AuthenticationPrincipal Long memberId) {
+        return ApiResponse.ok(analysisService.getPortfolio(memberId));
     }
 }

@@ -12,7 +12,9 @@ import com.readb.domain.survey.Survey;
 import com.readb.dto.analysis.AnalysisResultResponse;
 import com.readb.dto.analysis.BlockerKeyword;
 import com.readb.dto.analysis.CareerMemoryResponse;
+import com.readb.dto.analysis.PortfolioResponse;
 import com.readb.dto.analysis.RadarDataPoint;
+import com.readb.dto.analysis.SpeechTrendResponse;
 import com.readb.dto.team.TeamDashboardResponse;
 import com.readb.domain.user.User;
 import com.readb.repository.AnalysisRepository;
@@ -423,18 +425,93 @@ public class AnalysisService {
 
     @Transactional(readOnly = true)
     public List<CareerMemoryResponse> getCareerMemory(Long memberId) {
-        // TODO: 멤버 참여 미팅 careerTags 타임라인 조회
-        LocalDateTime now = LocalDateTime.now();
-        return List.of(
-                new CareerMemoryResponse(101L, now.minusDays(2),
-                        List.of("주도성", "협업"),
-                        Map.of("summary", "회의 안건을 먼저 정리해 공유한 주도적 행동이 인상적이었습니다.")),
-                new CareerMemoryResponse(102L, now.minusDays(9),
-                        List.of("문제 해결"),
-                        Map.of("summary", "QA 리소스 이슈를 직접 식별하고 대안을 제시했습니다.")),
-                new CareerMemoryResponse(103L, now.minusDays(16),
-                        List.of("학습", "성장"),
-                        Map.of("summary", "새로운 도구 학습 후 팀에 공유한 점이 좋았습니다."))
-        );
+        List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
+        if (meetings.isEmpty()) return List.of();
+
+        List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
+        Map<Long, Analysis> byMeetingId = analysisRepository.findByMeetingIdIn(meetingIds)
+                .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
+
+        return meetings.stream()
+                .filter(m -> byMeetingId.containsKey(m.getId()))
+                .map(m -> {
+                    Analysis a = byMeetingId.get(m.getId());
+                    return new CareerMemoryResponse(
+                            m.getId(),
+                            m.getScheduledAt(),
+                            a.getCareerTags() != null ? a.getCareerTags() : List.of(),
+                            a.getMemberFeedback() != null ? a.getMemberFeedback() : Map.of()
+                    );
+                })
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<SpeechTrendResponse> getSpeechTrend(Long memberId) {
+        List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
+        if (meetings.isEmpty()) return List.of();
+
+        List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
+        Map<Long, Analysis> byMeetingId = analysisRepository.findByMeetingIdIn(meetingIds)
+                .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
+
+        return meetings.stream()
+                .filter(m -> byMeetingId.containsKey(m.getId()))
+                .map(m -> {
+                    Map<String, Object> acts = byMeetingId.get(m.getId()).getSpeechActs();
+                    return new SpeechTrendResponse(
+                            m.getId(),
+                            m.getScheduledAt(),
+                            countSpeechAct(acts, "vulnerability"),
+                            countSpeechAct(acts, "dissent"),
+                            countSpeechAct(acts, "initiative")
+                    );
+                })
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PortfolioResponse getPortfolio(Long memberId) {
+        List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
+        if (meetings.isEmpty()) return new PortfolioResponse(List.of(), List.of(), List.of(), List.of());
+
+        List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
+        Map<Long, Analysis> byMeetingId = analysisRepository.findByMeetingIdIn(meetingIds)
+                .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
+
+        List<PortfolioResponse.MeetingSnapshot> meetingHistory = meetings.stream()
+                .map(m -> new PortfolioResponse.MeetingSnapshot(m.getId(), m.getScheduledAt(), m.getTitle()))
+                .toList();
+
+        List<PortfolioResponse.ScorePoint> scoreTrend = meetings.stream()
+                .filter(m -> byMeetingId.containsKey(m.getId()))
+                .map(m -> new PortfolioResponse.ScorePoint(m.getId(), m.getScheduledAt(), byMeetingId.get(m.getId()).getSafetyScore()))
+                .toList();
+
+        Map<String, Long> tagCount = byMeetingId.values().stream()
+                .filter(a -> a.getCareerTags() != null)
+                .flatMap(a -> a.getCareerTags().stream())
+                .collect(Collectors.groupingBy(t -> t, Collectors.counting()));
+
+        List<String> topCareerTags = tagCount.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .map(Map.Entry::getKey)
+                .limit(5)
+                .toList();
+
+        List<String> feedbackSummaries = meetings.stream()
+                .filter(m -> byMeetingId.containsKey(m.getId()))
+                .map(m -> byMeetingId.get(m.getId()).getMemberFeedback())
+                .filter(fb -> fb != null && fb.containsKey("summary"))
+                .map(fb -> (String) fb.get("summary"))
+                .toList();
+
+        return new PortfolioResponse(meetingHistory, scoreTrend, topCareerTags, feedbackSummaries);
+    }
+
+    private int countSpeechAct(Map<String, Object> speechActs, String key) {
+        if (speechActs == null) return 0;
+        Object val = speechActs.get(key);
+        return val instanceof List<?> list ? list.size() : 0;
     }
 }

@@ -7,8 +7,11 @@ import com.readb.domain.meeting.MeetingStatus;
 import com.readb.dto.meeting.MeetingCreateRequest;
 import com.readb.dto.meeting.MeetingCreateResponse;
 import com.readb.dto.meeting.RecordingPayload;
+import com.readb.repository.CareerEventRepository;
 import com.readb.repository.MeetingRepository;
+import com.readb.repository.PromiseRepository;
 import com.readb.repository.RecordingRepository;
+import com.readb.repository.SurveyRepository;
 import com.readb.repository.UserRepository;
 import com.readb.service.analysis.AnalysisOrchestrator;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,13 +46,22 @@ class MeetingServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private SurveyRepository surveyRepository;
+
+    @Mock
     private AnalysisOrchestrator analysisOrchestrator;
+
+    @Mock
+    private CareerEventRepository careerEventRepository;
+
+    @Mock
+    private PromiseRepository promiseRepository;
 
     private MeetingService meetingService;
 
     @BeforeEach
     void setUp() {
-        meetingService = new MeetingService(meetingRepository, recordingRepository, userRepository, analysisOrchestrator);
+        meetingService = new MeetingService(meetingRepository, recordingRepository, userRepository, surveyRepository, analysisOrchestrator, careerEventRepository, promiseRepository);
     }
 
     @Test
