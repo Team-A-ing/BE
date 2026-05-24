@@ -14,4 +14,6 @@ public interface PromiseRepository extends JpaRepository<Promise, Long> {
     List<Promise> findByMeetingIdIn(List<Long> meetingIds);
 
     void deleteByMeetingId(Long meetingId);
+
+    List<Promise> findByMeetingIdAndOwnerId(Long meetingId, Long ownerId);
 }
