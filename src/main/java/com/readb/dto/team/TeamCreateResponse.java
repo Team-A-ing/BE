@@ -8,6 +8,7 @@ public record TeamCreateResponse(
         Long id,
         String name,
         Long leaderId,
+        String inviteCode,
         LocalDateTime createdAt
 ) {
     public static TeamCreateResponse from(Team team) {
@@ -15,6 +16,7 @@ public record TeamCreateResponse(
                 team.getId(),
                 team.getName(),
                 team.getLeaderId(),
+                team.getInviteCode(),
                 team.getCreatedAt()
         );
     }

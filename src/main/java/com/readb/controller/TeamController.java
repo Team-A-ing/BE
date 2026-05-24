@@ -6,6 +6,8 @@ import com.readb.dto.analysis.RadarDataPoint;
 import com.readb.dto.team.TeamCreateRequest;
 import com.readb.dto.team.TeamCreateResponse;
 import com.readb.dto.team.TeamDashboardResponse;
+import com.readb.dto.team.TeamJoinRequest;
+import com.readb.dto.team.TeamJoinResponse;
 import com.readb.dto.team.TeamMemberResponse;
 import com.readb.service.analysis.AnalysisService;
 import com.readb.service.team.TeamService;
@@ -33,6 +35,14 @@ public class TeamController {
             @AuthenticationPrincipal Long leaderId,
             @Valid @RequestBody TeamCreateRequest request) {
         return ApiResponse.ok(teamService.createTeam(leaderId, request));
+    }
+
+    @PostMapping("/join")
+    @PreAuthorize("hasRole('MEMBER')")
+    public ApiResponse<TeamJoinResponse> joinTeam(
+            @AuthenticationPrincipal Long memberId,
+            @Valid @RequestBody TeamJoinRequest request) {
+        return ApiResponse.ok(teamService.joinTeam(memberId, request));
     }
 
     @GetMapping("/{teamId}/members")

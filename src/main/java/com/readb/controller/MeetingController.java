@@ -64,4 +64,13 @@ public class MeetingController {
     public ApiResponse<AnalysisResultResponse> getMemberReport(@PathVariable Long meetingId) {
         return ApiResponse.ok(analysisService.getResult(meetingId));
     }
+
+    // 개발/테스트 전용 — transcript를 직접 주입해서 분석 파이프라인 트리거
+    @PostMapping("/{meetingId}/analyze-test")
+    public ApiResponse<Void> analyzeTest(
+            @PathVariable Long meetingId,
+            @RequestBody java.util.Map<String, String> body) {
+        analysisService.analyze(meetingId, body.get("transcript"));
+        return ApiResponse.ok();
+    }
 }
