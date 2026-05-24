@@ -11,4 +11,5 @@ public interface SurveyRepository extends JpaRepository<Survey, Long> {
     List<Survey> findByMeetingId(Long meetingId);
     boolean existsByMeetingIdAndMemberId(Long meetingId, Long memberId);
     List<Survey> findByMeetingIdIn(List<Long> meetingIds);
+    List<Survey> findByMemberIdOrderBySubmittedAtDesc(Long memberId);
 }
