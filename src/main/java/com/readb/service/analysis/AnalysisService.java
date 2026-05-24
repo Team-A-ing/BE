@@ -30,6 +30,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -424,15 +429,15 @@ public class AnalysisService {
     }
 
     @Transactional(readOnly = true)
-    public List<CareerMemoryResponse> getCareerMemory(Long memberId) {
-        List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
-        if (meetings.isEmpty()) return List.of();
+    public Page<CareerMemoryResponse> getCareerMemory(Long memberId, Pageable pageable) {
+        Page<Meeting> meetingPage = meetingRepository.findByMemberId(memberId, pageable);
+        if (meetingPage.isEmpty()) return Page.empty(pageable);
 
-        List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
+        List<Long> meetingIds = meetingPage.getContent().stream().map(Meeting::getId).toList();
         Map<Long, Analysis> byMeetingId = analysisRepository.findByMeetingIdIn(meetingIds)
                 .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
 
-        return meetings.stream()
+        List<CareerMemoryResponse> content = meetingPage.getContent().stream()
                 .filter(m -> byMeetingId.containsKey(m.getId()))
                 .map(m -> {
                     Analysis a = byMeetingId.get(m.getId());
@@ -444,18 +449,20 @@ public class AnalysisService {
                     );
                 })
                 .toList();
+
+        return new PageImpl<>(content, pageable, meetingPage.getTotalElements());
     }
 
     @Transactional(readOnly = true)
-    public List<SpeechTrendResponse> getSpeechTrend(Long memberId) {
-        List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
-        if (meetings.isEmpty()) return List.of();
+    public Page<SpeechTrendResponse> getSpeechTrend(Long memberId, Pageable pageable) {
+        Page<Meeting> meetingPage = meetingRepository.findByMemberId(memberId, pageable);
+        if (meetingPage.isEmpty()) return Page.empty(pageable);
 
-        List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
+        List<Long> meetingIds = meetingPage.getContent().stream().map(Meeting::getId).toList();
         Map<Long, Analysis> byMeetingId = analysisRepository.findByMeetingIdIn(meetingIds)
                 .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
 
-        return meetings.stream()
+        List<SpeechTrendResponse> content = meetingPage.getContent().stream()
                 .filter(m -> byMeetingId.containsKey(m.getId()))
                 .map(m -> {
                     Map<String, Object> acts = byMeetingId.get(m.getId()).getSpeechActs();
@@ -468,11 +475,14 @@ public class AnalysisService {
                     );
                 })
                 .toList();
+
+        return new PageImpl<>(content, pageable, meetingPage.getTotalElements());
     }
 
     @Transactional(readOnly = true)
     public PortfolioResponse getPortfolio(Long memberId) {
-        List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
+        Pageable recent = PageRequest.of(0, 50, Sort.by(Sort.Direction.DESC, "createdAt"));
+        List<Meeting> meetings = meetingRepository.findByMemberId(memberId, recent).getContent();
         if (meetings.isEmpty()) return new PortfolioResponse(List.of(), List.of(), List.of(), List.of());
 
         List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
@@ -485,6 +495,7 @@ public class AnalysisService {
 
         List<PortfolioResponse.ScorePoint> scoreTrend = meetings.stream()
                 .filter(m -> byMeetingId.containsKey(m.getId()))
+                .filter(m -> byMeetingId.get(m.getId()).getSafetyScore() != null)
                 .map(m -> new PortfolioResponse.ScorePoint(m.getId(), m.getScheduledAt(), byMeetingId.get(m.getId()).getSafetyScore()))
                 .toList();
 
@@ -503,7 +514,7 @@ public class AnalysisService {
                 .filter(m -> byMeetingId.containsKey(m.getId()))
                 .map(m -> byMeetingId.get(m.getId()).getMemberFeedback())
                 .filter(fb -> fb != null && fb.containsKey("summary"))
-                .map(fb -> (String) fb.get("summary"))
+                .map(fb -> String.valueOf(fb.get("summary")))
                 .toList();
 
         return new PortfolioResponse(meetingHistory, scoreTrend, topCareerTags, feedbackSummaries);
