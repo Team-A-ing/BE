@@ -1,10 +1,14 @@
 package com.readb.service.analysis;
 
+import com.readb.common.exception.BusinessException;
+import com.readb.common.exception.ErrorCode;
+import com.readb.domain.meeting.Meeting;
 import com.readb.domain.promise.Promise;
 import com.readb.domain.promise.PromiseStatus;
 import com.readb.dto.promise.FulfillmentRateResponse;
 import com.readb.repository.MeetingRepository;
 import com.readb.repository.PromiseRepository;
+import com.readb.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,11 +21,17 @@ public class PromiseService {
 
     private final PromiseRepository promiseRepository;
     private final MeetingRepository meetingRepository;
+    private final UserRepository userRepository;
 
     @Transactional(readOnly = true)
-    public List<Promise> getPromisesByTeam(Long teamId) {
+    public List<Promise> getPromisesByTeam(Long teamId, Long userId) {
+        boolean belongs = userRepository.findById(userId)
+                .map(u -> teamId.equals(u.getTeamId()))
+                .orElse(false);
+        if (!belongs) throw new BusinessException(ErrorCode.FORBIDDEN);
+
         List<Long> meetingIds = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId)
-                .stream().map(m -> m.getId()).toList();
+                .stream().map(Meeting::getId).toList();
         return promiseRepository.findByMeetingIdIn(meetingIds);
     }
 

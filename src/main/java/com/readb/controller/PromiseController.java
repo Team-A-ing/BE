@@ -18,8 +18,10 @@ public class PromiseController {
     private final PromiseService promiseService;
 
     @GetMapping
-    public ApiResponse<List<Promise>> getPromises(@RequestParam Long teamId) {
-        return ApiResponse.ok(promiseService.getPromisesByTeam(teamId));
+    public ApiResponse<List<Promise>> getPromises(
+            @RequestParam Long teamId,
+            @AuthenticationPrincipal Long userId) {
+        return ApiResponse.ok(promiseService.getPromisesByTeam(teamId, userId));
     }
 
     @GetMapping("/fulfillment-rate")
