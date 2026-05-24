@@ -6,7 +6,10 @@ import com.readb.dto.survey.SurveyRequest;
 import com.readb.dto.survey.SurveyResponse;
 import com.readb.service.survey.SurveyService;
 import jakarta.validation.Valid;
-import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -29,9 +32,10 @@ public class SurveyController {
     }
 
     @GetMapping("/history")
-    public ApiResponse<List<SurveyHistoryResponse>> getHistory(
-            @AuthenticationPrincipal Long memberId) {
-        return ApiResponse.ok(surveyService.getHistory(memberId));
+    public ApiResponse<Page<SurveyHistoryResponse>> getHistory(
+            @AuthenticationPrincipal Long memberId,
+            @PageableDefault(size = 20, sort = "submittedAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ApiResponse.ok(surveyService.getHistory(memberId, pageable));
     }
 
     @GetMapping("/{meetingId}")

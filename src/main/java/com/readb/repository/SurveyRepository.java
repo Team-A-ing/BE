@@ -1,6 +1,8 @@
 package com.readb.repository;
 
 import com.readb.domain.survey.Survey;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -11,5 +13,5 @@ public interface SurveyRepository extends JpaRepository<Survey, Long> {
     List<Survey> findByMeetingId(Long meetingId);
     boolean existsByMeetingIdAndMemberId(Long meetingId, Long memberId);
     List<Survey> findByMeetingIdIn(List<Long> meetingIds);
-    List<Survey> findByMemberIdOrderBySubmittedAtDesc(Long memberId);
+    Page<Survey> findByMemberId(Long memberId, Pageable pageable);
 }

@@ -8,10 +8,10 @@ import com.readb.dto.survey.SurveyRequest;
 import com.readb.dto.survey.SurveyResponse;
 import com.readb.repository.SurveyRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -33,10 +33,9 @@ public class SurveyService {
     }
 
     @Transactional(readOnly = true)
-    public List<SurveyHistoryResponse> getHistory(Long memberId) {
-        return surveyRepository.findByMemberIdOrderBySubmittedAtDesc(memberId).stream()
-                .map(s -> new SurveyHistoryResponse(s.getMeetingId(), s.getSubmittedAt(), s.getScores()))
-                .toList();
+    public Page<SurveyHistoryResponse> getHistory(Long memberId, Pageable pageable) {
+        return surveyRepository.findByMemberId(memberId, pageable)
+                .map(s -> new SurveyHistoryResponse(s.getMeetingId(), s.getSubmittedAt(), s.getScores()));
     }
 
     @Transactional(readOnly = true)
