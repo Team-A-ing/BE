@@ -10,4 +10,5 @@ public interface SurveyRepository extends JpaRepository<Survey, Long> {
     Optional<Survey> findByMeetingIdAndMemberId(Long meetingId, Long memberId);
     List<Survey> findByMeetingId(Long meetingId);
     boolean existsByMeetingIdAndMemberId(Long meetingId, Long memberId);
+    List<Survey> findByMeetingIdIn(List<Long> meetingIds);
 }
