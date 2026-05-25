@@ -2,6 +2,7 @@ package com.readb.controller;
 
 import com.readb.common.response.ApiResponse;
 import com.readb.domain.promise.Promise;
+import com.readb.dto.promise.FulfillmentRateResponse;
 import com.readb.service.analysis.PromiseService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -19,8 +20,13 @@ public class PromiseController {
     @GetMapping
     public ApiResponse<List<Promise>> getPromises(
             @RequestParam Long teamId,
-            @AuthenticationPrincipal Long leaderId) {
-        // TODO: teamId 기반 필터링으로 교체 (현재 leaderId 기반 stub)
-        return ApiResponse.ok(promiseService.getPromisesByLeader(leaderId));
+            @AuthenticationPrincipal Long userId) {
+        return ApiResponse.ok(promiseService.getPromisesByTeam(teamId, userId));
+    }
+
+    @GetMapping("/fulfillment-rate")
+    public ApiResponse<FulfillmentRateResponse> getFulfillmentRate(
+            @AuthenticationPrincipal Long userId) {
+        return ApiResponse.ok(promiseService.getFulfillmentRate(userId));
     }
 }

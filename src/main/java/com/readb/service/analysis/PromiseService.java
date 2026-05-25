@@ -1,13 +1,18 @@
 package com.readb.service.analysis;
 
+import com.readb.common.exception.BusinessException;
+import com.readb.common.exception.ErrorCode;
+import com.readb.domain.meeting.Meeting;
 import com.readb.domain.promise.Promise;
 import com.readb.domain.promise.PromiseStatus;
+import com.readb.dto.promise.FulfillmentRateResponse;
+import com.readb.repository.MeetingRepository;
 import com.readb.repository.PromiseRepository;
+import com.readb.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -15,36 +20,43 @@ import java.util.List;
 public class PromiseService {
 
     private final PromiseRepository promiseRepository;
+    private final MeetingRepository meetingRepository;
+    private final UserRepository userRepository;
 
     @Transactional(readOnly = true)
-    public List<Promise> getPromisesByLeader(Long leaderId) {
-        // TODO(5/7+): Meeting을 거쳐 팀 단위로 promises 집계하도록 확장.
-        List<Promise> actual = promiseRepository.findByOwnerIdOrderByCreatedAtDesc(leaderId);
-        if (!actual.isEmpty()) return actual;
+    public List<Promise> getPromisesByTeam(Long teamId, Long userId) {
+        boolean belongs = userRepository.findById(userId)
+                .map(u -> teamId.equals(u.getTeamId()))
+                .orElse(false);
+        if (!belongs) throw new BusinessException(ErrorCode.FORBIDDEN);
 
-        // 5/8 데모 stub — DB가 비어 있을 때 빈 화면 회피용 정적 더미.
-        return List.of(
-                Promise.builder()
-                        .meetingId(101L)
-                        .ownerId(leaderId)
-                        .content("팀원 Career Memory 주간 1회 리뷰")
-                        .deadline(LocalDate.now().plusDays(7))
-                        .status(PromiseStatus.PENDING)
-                        .build(),
-                Promise.builder()
-                        .meetingId(102L)
-                        .ownerId(leaderId)
-                        .content("QA 리소스 확보 방안 논의")
-                        .deadline(LocalDate.now().minusDays(2))
-                        .status(PromiseStatus.MISSED)
-                        .build(),
-                Promise.builder()
-                        .meetingId(100L)
-                        .ownerId(leaderId)
-                        .content("1on1 주기 격주로 변경")
-                        .deadline(LocalDate.now().minusDays(10))
-                        .status(PromiseStatus.DONE)
-                        .build()
+        List<Long> meetingIds = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId)
+                .stream().map(Meeting::getId).toList();
+        return promiseRepository.findByMeetingIdIn(meetingIds);
+    }
+
+    @Transactional(readOnly = true)
+    public FulfillmentRateResponse getFulfillmentRate(Long ownerId) {
+        List<Promise> promises = promiseRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId);
+        int total = promises.size();
+        if (total == 0) return new FulfillmentRateResponse(0, 0, 0, 0, 0.0, 0.0, 0.0);
+
+        int doneCount = (int) promises.stream().filter(p -> p.getStatus() == PromiseStatus.DONE).count();
+        int missedCount = (int) promises.stream().filter(p -> p.getStatus() == PromiseStatus.MISSED).count();
+        int pendingCount = total - doneCount - missedCount;
+
+        return new FulfillmentRateResponse(
+                total,
+                doneCount,
+                missedCount,
+                pendingCount,
+                round(doneCount, total),
+                round(missedCount, total),
+                round(pendingCount, total)
         );
+    }
+
+    private double round(int count, int total) {
+        return Math.round((double) count / total * 1000) / 10.0;
     }
 }
