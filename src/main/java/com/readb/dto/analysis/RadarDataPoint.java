@@ -8,6 +8,6 @@ public record RadarDataPoint(
         Double surveyScore,
         Double safetyScore,
         Double honestyGap,
-        String direction,
-        String riskLevel
+        HonestyDirection direction,
+        RiskLevel riskLevel
 ) {}

@@ -15,6 +15,6 @@ public record AnalysisResultResponse(
         Map<String, Object> memberFeedback,
         List<String> careerTags,
         Map<String, Object> baselineData,
-        String direction,
-        String riskLevel
+        HonestyDirection direction,
+        RiskLevel riskLevel
 ) {}

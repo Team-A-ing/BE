@@ -12,8 +12,10 @@ import com.readb.domain.survey.Survey;
 import com.readb.dto.analysis.AnalysisResultResponse;
 import com.readb.dto.analysis.BlockerKeyword;
 import com.readb.dto.analysis.CareerMemoryResponse;
+import com.readb.dto.analysis.HonestyDirection;
 import com.readb.dto.analysis.PortfolioResponse;
 import com.readb.dto.analysis.RadarDataPoint;
+import com.readb.dto.analysis.RiskLevel;
 import com.readb.dto.analysis.SpeechTrendResponse;
 import com.readb.dto.team.TeamDashboardResponse;
 import com.readb.domain.user.User;
@@ -31,7 +33,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -321,18 +322,18 @@ public class AnalysisService {
         return null;
     }
 
-    private static String computeDirection(Double honestyGap) {
-        if (honestyGap == null || honestyGap == 0.0) return "NEUTRAL";
-        return honestyGap > 0 ? "OVERREPORT" : "UNDERREPORT";
+    private static HonestyDirection computeDirection(Double honestyGap) {
+        if (honestyGap == null || honestyGap == 0.0) return HonestyDirection.NEUTRAL;
+        return honestyGap > 0 ? HonestyDirection.OVERREPORT : HonestyDirection.UNDERREPORT;
     }
 
-    private static String computeRiskLevel(Double honestyGap) {
-        if (honestyGap == null) return "SAFE";
+    private static RiskLevel computeRiskLevel(Double honestyGap) {
+        if (honestyGap == null) return RiskLevel.SAFE;
         double abs = Math.abs(honestyGap);
-        if (abs < 10) return "SAFE";
-        if (abs < 20) return "CAUTION";
-        if (abs < 30) return "WARNING";
-        return "DANGER";
+        if (abs < 10) return RiskLevel.SAFE;
+        if (abs < 20) return RiskLevel.CAUTION;
+        if (abs < 30) return RiskLevel.WARNING;
+        return RiskLevel.DANGER;
     }
 
     // ── 조회 ──────────────────────────────────────────────────────────────────
@@ -349,7 +350,8 @@ public class AnalysisService {
 
     @Transactional(readOnly = true)
     public TeamDashboardResponse getTeamDashboard(Long teamId) {
-        List<Meeting> meetings = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId);
+        List<Meeting> meetings = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId)
+                .stream().limit(20).collect(Collectors.toList());
         if (meetings.isEmpty()) {
             return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of());
         }
@@ -408,9 +410,7 @@ public class AnalysisService {
                 .stream().collect(Collectors.toMap(User::getId, User::getName));
 
         Map<Long, List<Long>> meetingIdsByMember = new LinkedHashMap<>();
-        meetings.stream()
-                .sorted(Comparator.comparingLong(Meeting::getId).reversed())
-                .forEach(m -> meetingIdsByMember
+        meetings.forEach(m -> meetingIdsByMember
                         .computeIfAbsent(m.getMemberId(), k -> new ArrayList<>())
                         .add(m.getId()));
 
