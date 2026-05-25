@@ -29,17 +29,20 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.OptionalDouble;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -318,7 +321,21 @@ public class AnalysisService {
         return null;
     }
 
-    // ── 조회 (stub → 실데이터로 교체 예정) ──────────────────────────────────
+    private static String computeDirection(Double honestyGap) {
+        if (honestyGap == null || honestyGap == 0.0) return "NEUTRAL";
+        return honestyGap > 0 ? "OVERREPORT" : "UNDERREPORT";
+    }
+
+    private static String computeRiskLevel(Double honestyGap) {
+        if (honestyGap == null) return "SAFE";
+        double abs = Math.abs(honestyGap);
+        if (abs < 10) return "SAFE";
+        if (abs < 20) return "CAUTION";
+        if (abs < 30) return "WARNING";
+        return "DANGER";
+    }
+
+    // ── 조회 ──────────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
     public AnalysisResultResponse getResult(Long meetingId) {
@@ -326,44 +343,103 @@ public class AnalysisService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_NOT_FOUND));
         return new AnalysisResultResponse(meetingId, a.getAlignmentGap(), a.getHonestyGap(),
                 a.getExecutionGap(), a.getSafetyScore(), a.getSpeechActs(), a.getBlockerKeywords(),
-                a.getLeaderFeedback(), a.getMemberFeedback(), a.getCareerTags(), a.getBaselineData());
+                a.getLeaderFeedback(), a.getMemberFeedback(), a.getCareerTags(), a.getBaselineData(),
+                computeDirection(a.getHonestyGap()), computeRiskLevel(a.getHonestyGap()));
     }
 
     @Transactional(readOnly = true)
     public TeamDashboardResponse getTeamDashboard(Long teamId) {
-        List<Long> meetingIds = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId)
-                .stream().limit(20).map(Meeting::getId).toList();
-        if (meetingIds.isEmpty()) {
+        List<Meeting> meetings = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId);
+        if (meetings.isEmpty()) {
             return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of());
         }
 
-        List<Double> scores = analysisRepository.findByMeetingIdIn(meetingIds)
-                .stream()
-                .sorted(Comparator.comparingLong(Analysis::getMeetingId).reversed())
-                .map(Analysis::getSafetyScore)
-                .filter(s -> s != null)
+        List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
+
+        Map<Long, Analysis> analysisByMeeting = analysisRepository.findByMeetingIdIn(meetingIds)
+                .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
+        Map<Long, Survey> surveyByMeeting = surveyRepository.findByMeetingIdIn(meetingIds)
+                .stream().collect(Collectors.toMap(Survey::getMeetingId, s -> s));
+
+        // 미팅별 teamHealthScore = safetyScore×0.6 + surveyScore×0.4 (서베이 없으면 safetyScore 단독)
+        record ScoredMeeting(YearMonth month, double health, Long memberId, Long meetingId) {}
+
+        List<ScoredMeeting> scored = meetings.stream()
+                .map(m -> {
+                    Analysis a = analysisByMeeting.get(m.getId());
+                    if (a == null || a.getSafetyScore() == null) return null;
+                    double safety = a.getSafetyScore();
+                    Survey s = surveyByMeeting.get(m.getId());
+                    double health = (s != null)
+                            ? safety * 0.6 + computeSurveyScore(s.getScores()) * 0.4
+                            : safety;
+                    return new ScoredMeeting(YearMonth.from(m.getCreatedAt()), health,
+                            m.getMemberId(), m.getId());
+                })
+                .filter(Objects::nonNull)
                 .toList();
-        if (scores.isEmpty()) {
+
+        if (scored.isEmpty()) {
             return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of());
         }
 
-        double avg = scores.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        double avg = scored.stream().mapToDouble(ScoredMeeting::health).average().orElse(0.0);
         double rounded = Math.round(avg * 10.0) / 10.0;
 
-        String trend;
-        if (scores.size() < 2) {
-            trend = "STABLE";
-        } else {
-            // 최근 절반 vs 이전 절반 평균 비교
-            int half = scores.size() / 2;
-            double recent = scores.subList(0, half).stream().mapToDouble(Double::doubleValue).average().orElse(0);
-            double previous = scores.subList(half, scores.size()).stream().mapToDouble(Double::doubleValue).average().orElse(0);
-            if (recent > previous + 5) trend = "IMPROVING";
-            else if (recent < previous - 5) trend = "DECLINING";
-            else trend = "STABLE";
+        // ④ Trend: 전월 대비
+        YearMonth thisMonth = YearMonth.now();
+        YearMonth prevMonth = thisMonth.minusMonths(1);
+        OptionalDouble thisAvg = scored.stream()
+                .filter(e -> e.month().equals(thisMonth))
+                .mapToDouble(ScoredMeeting::health).average();
+        OptionalDouble prevAvg = scored.stream()
+                .filter(e -> e.month().equals(prevMonth))
+                .mapToDouble(ScoredMeeting::health).average();
+
+        String trend = "STABLE";
+        if (thisAvg.isPresent() && prevAvg.isPresent()) {
+            double diff = thisAvg.getAsDouble() - prevAvg.getAsDouble();
+            if (diff > 5) trend = "IMPROVING";
+            else if (diff < -5) trend = "DECLINING";
         }
 
-        return new TeamDashboardResponse(teamId, rounded, trend, List.of());
+        // ⑤ Silent Risk: 멤버별 최근 3회 baseline 대비 현재 30%+ 하락
+        Map<Long, String> memberNames = userRepository.findByTeamId(teamId)
+                .stream().collect(Collectors.toMap(User::getId, User::getName));
+
+        Map<Long, List<Long>> meetingIdsByMember = new LinkedHashMap<>();
+        meetings.stream()
+                .sorted(Comparator.comparingLong(Meeting::getId).reversed())
+                .forEach(m -> meetingIdsByMember
+                        .computeIfAbsent(m.getMemberId(), k -> new ArrayList<>())
+                        .add(m.getId()));
+
+        List<String> alerts = new ArrayList<>();
+        for (Map.Entry<Long, List<Long>> entry : meetingIdsByMember.entrySet()) {
+            List<Long> ids = entry.getValue();
+            if (ids.size() < 4) continue;
+            Analysis cur = analysisByMeeting.get(ids.get(0));
+            if (cur == null || cur.getSafetyScore() == null) continue;
+            double current = cur.getSafetyScore();
+            double baseline = 0;
+            int cnt = 0;
+            for (int i = 1; i <= 3; i++) {
+                Analysis prev = analysisByMeeting.get(ids.get(i));
+                if (prev != null && prev.getSafetyScore() != null) {
+                    baseline += prev.getSafetyScore();
+                    cnt++;
+                }
+            }
+            if (cnt == 0) continue;
+            baseline /= cnt;
+            if (baseline > 0 && current < baseline * 0.7) {
+                String name = memberNames.getOrDefault(entry.getKey(), "멤버#" + entry.getKey());
+                alerts.add(name + " - 심리적 안전감 급락 (현재 " + Math.round(current)
+                        + " / 기준선 " + Math.round(baseline) + ")");
+            }
+        }
+
+        return new TeamDashboardResponse(teamId, rounded, trend, alerts);
     }
 
     @Transactional(readOnly = true)
@@ -404,7 +480,8 @@ public class AnalysisService {
                     : null;
 
             User member = userById.get(memberId);
-            result.add(new RadarDataPoint(memberId, member.getName(), surveyScore, safetyScore, honestyGap));
+            result.add(new RadarDataPoint(memberId, member.getName(), surveyScore, safetyScore, honestyGap,
+                    computeDirection(honestyGap), computeRiskLevel(honestyGap)));
         }
         return result;
     }
