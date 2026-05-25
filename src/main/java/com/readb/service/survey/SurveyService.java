@@ -3,10 +3,13 @@ package com.readb.service.survey;
 import com.readb.common.exception.BusinessException;
 import com.readb.common.exception.ErrorCode;
 import com.readb.domain.survey.Survey;
+import com.readb.dto.survey.SurveyHistoryResponse;
 import com.readb.dto.survey.SurveyRequest;
 import com.readb.dto.survey.SurveyResponse;
 import com.readb.repository.SurveyRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +30,12 @@ public class SurveyService {
                 .scores(request.scores())
                 .build();
         surveyRepository.save(survey);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<SurveyHistoryResponse> getHistory(Long memberId, Pageable pageable) {
+        return surveyRepository.findByMemberId(memberId, pageable)
+                .map(s -> new SurveyHistoryResponse(s.getMeetingId(), s.getSubmittedAt(), s.getScores()));
     }
 
     @Transactional(readOnly = true)
