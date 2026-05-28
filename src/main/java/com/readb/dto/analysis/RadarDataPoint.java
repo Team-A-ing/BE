@@ -7,5 +7,7 @@ public record RadarDataPoint(
         String memberName,
         Double surveyScore,
         Double safetyScore,
-        Double honestyGap
+        Double honestyGap,
+        HonestyDirection direction,
+        RiskLevel riskLevel
 ) {}
