@@ -10,6 +10,10 @@ public interface CareerEventRepository extends JpaRepository<CareerEvent, Long> 
 
     List<CareerEvent> findByUserIdOrderByOccurredAtDesc(Long userId);
 
+    List<CareerEvent> findByUserIdAndEventTypeOrderByOccurredAtDesc(Long userId, CareerEventType eventType);
+
+    int countByUserId(Long userId);
+
     List<CareerEvent> findByMeetingId(Long meetingId);
 
     List<CareerEvent> findByMeetingIdAndEventTypeIn(Long meetingId, List<CareerEventType> types);

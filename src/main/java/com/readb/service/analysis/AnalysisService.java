@@ -19,11 +19,18 @@ import com.readb.dto.analysis.RiskLevel;
 import com.readb.dto.analysis.SpeechTrendResponse;
 import com.readb.dto.team.TeamDashboardResponse;
 import com.readb.domain.user.User;
+import com.readb.domain.career.CareerEvent;
+import com.readb.domain.career.CareerEventType;
+import com.readb.domain.user.UserRole;
+import com.readb.dto.analysis.CareerStatsResponse;
+import com.readb.dto.analysis.CareerTimelineResponse;
 import com.readb.repository.AnalysisRepository;
+import com.readb.repository.CareerEventRepository;
 import com.readb.repository.MeetingRepository;
 import com.readb.repository.PromiseRepository;
 import com.readb.repository.RecordingRepository;
 import com.readb.repository.SurveyRepository;
+import com.readb.repository.TeamRepository;
 import com.readb.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -137,6 +144,8 @@ public class AnalysisService {
     private final RecordingRepository recordingRepository;
     private final PromiseRepository promiseRepository;
     private final UserRepository userRepository;
+    private final CareerEventRepository careerEventRepository;
+    private final TeamRepository teamRepository;
     private final LlmAdapter gptAdapter;
     private final LlmAdapter claudeAdapter;
     private final ObjectMapper objectMapper;
@@ -148,6 +157,8 @@ public class AnalysisService {
             RecordingRepository recordingRepository,
             PromiseRepository promiseRepository,
             UserRepository userRepository,
+            CareerEventRepository careerEventRepository,
+            TeamRepository teamRepository,
             @Qualifier("gptMiniAdapter") LlmAdapter gptAdapter,
             @Qualifier("claudeAdapter") LlmAdapter claudeAdapter,
             ObjectMapper objectMapper) {
@@ -157,6 +168,8 @@ public class AnalysisService {
         this.recordingRepository = recordingRepository;
         this.promiseRepository = promiseRepository;
         this.userRepository = userRepository;
+        this.careerEventRepository = careerEventRepository;
+        this.teamRepository = teamRepository;
         this.gptAdapter = gptAdapter;
         this.claudeAdapter = claudeAdapter;
         this.objectMapper = objectMapper;
@@ -601,5 +614,127 @@ public class AnalysisService {
         if (speechActs == null) return 0;
         Object val = speechActs.get(key);
         return val instanceof List<?> list ? list.size() : 0;
+    }
+
+    // ── 11절: Career Memory (본인 또는 본인 팀 리더 조회 가능) ──────────────
+
+    @Transactional(readOnly = true)
+    public CareerStatsResponse getCareerStats(Long requesterId, Long memberId) {
+        checkCareerAccess(requesterId, memberId);
+
+        User member = userRepository.findById(memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        String teamName = member.getTeamId() != null
+                ? teamRepository.findById(member.getTeamId()).map(t -> t.getName()).orElse(null)
+                : null;
+
+        int totalMeetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId).size();
+
+        List<CareerEvent> events = careerEventRepository.findByUserIdOrderByOccurredAtDesc(memberId);
+        int achievementCount = (int) events.stream()
+                .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT).count();
+        int leaderEndorsementCount = events.size();
+
+        int contributionPercentile = computeContributionPercentile(memberId, member.getTeamId());
+
+        String aiSummary = buildAiSummary(memberId);
+
+        return new CareerStatsResponse(
+                memberId, member.getName(), member.getJobTitle(), teamName,
+                totalMeetings, achievementCount, leaderEndorsementCount,
+                contributionPercentile, aiSummary);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CareerTimelineResponse> getCareerTimeline(Long requesterId, Long memberId, String type) {
+        checkCareerAccess(requesterId, memberId);
+
+        List<CareerEvent> events = (type != null)
+                ? careerEventRepository.findByUserIdAndEventTypeOrderByOccurredAtDesc(
+                        memberId, CareerEventType.valueOf(type.toUpperCase()))
+                : careerEventRepository.findByUserIdOrderByOccurredAtDesc(memberId);
+
+        List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
+        Map<Long, Integer> roundByMeetingId = buildRoundMap(meetings);
+
+        return events.stream()
+                .map(e -> toTimelineResponse(e, roundByMeetingId))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<CareerTimelineResponse> getCareerShowcase(Long requesterId, Long memberId) {
+        checkCareerAccess(requesterId, memberId);
+
+        List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
+        Map<Long, Integer> roundByMeetingId = buildRoundMap(meetings);
+
+        return careerEventRepository.findByUserIdOrderByOccurredAtDesc(memberId).stream()
+                .filter(e -> e.getEvidence() != null && e.getEvidence().containsKey("impactMetric"))
+                .limit(5)
+                .map(e -> toTimelineResponse(e, roundByMeetingId))
+                .toList();
+    }
+
+    private void checkCareerAccess(Long requesterId, Long memberId) {
+        if (requesterId.equals(memberId)) return;
+        User requester = userRepository.findById(requesterId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        User member = userRepository.findById(memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (requester.getRole() != UserRole.LEADER
+                || !requester.getTeamId().equals(member.getTeamId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+    }
+
+    private int computeContributionPercentile(Long memberId, Long teamId) {
+        if (teamId == null) return 100;
+        List<User> teammates = userRepository.findByTeamId(teamId).stream()
+                .filter(u -> u.getRole() != UserRole.LEADER)
+                .toList();
+        if (teammates.size() <= 1) return 1;
+        int myCount = careerEventRepository.countByUserId(memberId);
+        long betterCount = teammates.stream()
+                .filter(u -> !u.getId().equals(memberId))
+                .mapToInt(u -> careerEventRepository.countByUserId(u.getId()))
+                .filter(c -> c > myCount)
+                .count();
+        return (int) Math.round((double) betterCount / (teammates.size() - 1) * 100);
+    }
+
+    private String buildAiSummary(Long memberId) {
+        List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
+        if (meetings.isEmpty()) return null;
+        List<Long> ids = meetings.stream().map(Meeting::getId).limit(5).toList();
+        List<String> tags = analysisRepository.findByMeetingIdIn(ids).stream()
+                .filter(a -> a.getCareerTags() != null)
+                .flatMap(a -> a.getCareerTags().stream())
+                .distinct().limit(5).toList();
+        return tags.isEmpty() ? null : String.join(", ", tags);
+    }
+
+    private Map<Long, Integer> buildRoundMap(List<Meeting> meetings) {
+        List<Meeting> ascending = meetings.stream()
+                .sorted(java.util.Comparator.comparing(Meeting::getId))
+                .toList();
+        Map<Long, Integer> map = new java.util.HashMap<>();
+        for (int i = 0; i < ascending.size(); i++) {
+            map.put(ascending.get(i).getId(), i + 1);
+        }
+        return map;
+    }
+
+    private CareerTimelineResponse toTimelineResponse(CareerEvent e, Map<Long, Integer> roundByMeetingId) {
+        String impactMetric = e.getEvidence() != null
+                ? (String) e.getEvidence().get("impactMetric") : null;
+        int round = e.getMeetingId() != null
+                ? roundByMeetingId.getOrDefault(e.getMeetingId(), 0) : 0;
+        java.time.LocalDate eventDate = e.getOccurredAt() != null
+                ? e.getOccurredAt().toLocalDate() : null;
+        return new CareerTimelineResponse(
+                e.getId(), e.getEventType().name(), e.getTitle(),
+                e.getDescription(), impactMetric, eventDate, round);
     }
 }
