@@ -25,9 +25,11 @@ public class Analysis {
     @Column(name = "meeting_id", nullable = false, unique = true)
     private Long meetingId;
 
-    // 3-Gap Model
     @Column(name = "alignment_gap")
     private Double alignmentGap;
+
+    @Column(name = "alignment_gap_detail", columnDefinition = "TEXT")
+    private String alignmentGapDetail;
 
     @Column(name = "honesty_gap")
     private Double honestyGap;
@@ -35,11 +37,10 @@ public class Analysis {
     @Column(name = "execution_gap")
     private Double executionGap;
 
-    // Speech Act 카운팅 기반 심리적 안전감 점수 (0~100)
     @Column(name = "safety_score")
     private Double safetyScore;
 
-    // {"vulnerability":[{text,timestamp}], "dissent":[...], "initiative":[...]}
+    // {"vulnerability":[{text,timestamp}], "constructiveDissent":[...], "initiative":[...]}
     @Type(JsonBinaryType.class)
     @Column(name = "speech_acts", columnDefinition = "jsonb")
     private Map<String, Object> speechActs;
@@ -48,9 +49,10 @@ public class Analysis {
     @Column(name = "blocker_keywords", columnDefinition = "jsonb")
     private List<String> blockerKeywords;
 
+    // [{severity, title, evidenceQuote, dataSummary, actionGuide}]
     @Type(JsonBinaryType.class)
     @Column(name = "leader_feedback", columnDefinition = "jsonb")
-    private Map<String, Object> leaderFeedback;
+    private List<Map<String, Object>> feedbacks;
 
     @Type(JsonBinaryType.class)
     @Column(name = "member_feedback", columnDefinition = "jsonb")
@@ -60,7 +62,11 @@ public class Analysis {
     @Column(name = "career_tags", columnDefinition = "jsonb")
     private List<String> careerTags;
 
-    // 최근 3회 평균 등 베이스라인: {prev_avg_vulnerability, prev_avg_dissent, prev_avg_initiative, ...}
+    // {leaderRatio, memberRatio}
+    @Type(JsonBinaryType.class)
+    @Column(name = "talk_ratio", columnDefinition = "jsonb")
+    private Map<String, Object> talkRatio;
+
     @Type(JsonBinaryType.class)
     @Column(name = "baseline_data", columnDefinition = "jsonb")
     private Map<String, Object> baselineData;

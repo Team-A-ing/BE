@@ -1,6 +1,9 @@
 package com.readb.controller;
 
+import com.readb.common.exception.BusinessException;
+import com.readb.common.exception.ErrorCode;
 import com.readb.common.response.ApiResponse;
+import com.readb.domain.actionplan.ActionPlan;
 import com.readb.dto.analysis.AnalysisResultResponse;
 import com.readb.dto.meeting.MeetingCreateRequest;
 import com.readb.dto.meeting.MeetingCreateResponse;
@@ -8,6 +11,7 @@ import com.readb.dto.meeting.MeetingDetailResponse;
 import com.readb.dto.meeting.MeetingListResponse;
 import com.readb.dto.meeting.MeetingStatusResponse;
 import com.readb.dto.meeting.MemberReportResponse;
+import com.readb.repository.ActionPlanRepository;
 import com.readb.service.analysis.AnalysisService;
 import com.readb.service.meeting.MeetingService;
 import jakarta.validation.Valid;
@@ -26,6 +30,7 @@ public class MeetingController {
 
     private final MeetingService meetingService;
     private final AnalysisService analysisService;
+    private final ActionPlanRepository actionPlanRepository;
 
     @GetMapping
     public ApiResponse<List<MeetingListResponse>> getMeetings(
@@ -76,6 +81,20 @@ public class MeetingController {
             @PathVariable Long meetingId,
             @AuthenticationPrincipal Long userId) {
         return ApiResponse.ok(meetingService.getMemberReport(meetingId, userId));
+    }
+
+    @PatchMapping("/action-plans/{planId}/complete")
+    public ApiResponse<Void> completeActionPlan(
+            @PathVariable Long planId,
+            @AuthenticationPrincipal Long leaderId) {
+        ActionPlan plan = actionPlanRepository.findById(planId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
+        if (!plan.getLeaderId().equals(leaderId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        plan.complete();
+        actionPlanRepository.save(plan);
+        return ApiResponse.ok();
     }
 
     // 개발/테스트 전용 — transcript를 직접 주입해서 분석 파이프라인 트리거
