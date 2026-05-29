@@ -1,5 +1,6 @@
 package com.readb.dto.analysis;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 public record AnalysisResultResponse(
@@ -74,7 +75,7 @@ public record AnalysisResultResponse(
 
     public record PromisesResponse(
             List<PreviousPromise> previous,
-            List<NewPromise> newPromises
+            @JsonProperty("new") List<NewPromise> newPromises
     ) {}
 
     public record PreviousPromise(Long promiseId, String content, String status) {}
