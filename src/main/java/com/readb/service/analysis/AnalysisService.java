@@ -12,6 +12,7 @@ import com.readb.domain.survey.Survey;
 import com.readb.dto.analysis.AnalysisResultResponse;
 import com.readb.dto.analysis.AnalysisResultResponse.*;
 import com.readb.dto.analysis.BlockerKeyword;
+import com.readb.dto.analysis.BlockerPyramidResponse;
 import com.readb.dto.analysis.CareerMemoryResponse;
 import com.readb.dto.analysis.HonestyDirection;
 import com.readb.dto.analysis.PortfolioResponse;
@@ -691,22 +692,47 @@ public class AnalysisService {
     }
 
     @Transactional(readOnly = true)
-    public List<BlockerKeyword> getBlockerData(Long teamId) {
-        List<Long> meetingIds = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId)
-                .stream().map(Meeting::getId).toList();
-        if (meetingIds.isEmpty()) return List.of();
+    public BlockerPyramidResponse getBlockerData(Long teamId) {
+        List<Meeting> meetings = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId);
+        if (meetings.isEmpty()) return new BlockerPyramidResponse(List.of(), List.of());
 
-        Map<String, Integer> counts = new LinkedHashMap<>();
+        List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
+        Map<Long, Long> memberByMeeting = meetings.stream()
+                .collect(Collectors.toMap(Meeting::getId, Meeting::getMemberId));
+
+        // 키워드별 (총 출현 횟수, 언급 멤버 Set) 집계
+        Map<String, Integer> countMap = new LinkedHashMap<>();
+        Map<String, java.util.Set<Long>> memberMap = new LinkedHashMap<>();
         analysisRepository.findByMeetingIdIn(meetingIds).forEach(analysis -> {
             List<String> keywords = analysis.getBlockerKeywords();
             if (keywords == null) return;
-            keywords.forEach(kw -> counts.merge(kw, 1, Integer::sum));
+            Long memberId = memberByMeeting.get(analysis.getMeetingId());
+            keywords.forEach(kw -> {
+                countMap.merge(kw, 1, Integer::sum);
+                memberMap.computeIfAbsent(kw, k -> new java.util.HashSet<>()).add(memberId);
+            });
         });
 
-        return counts.entrySet().stream()
+        List<BlockerKeyword> keywords = countMap.entrySet().stream()
                 .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                .map(e -> new BlockerKeyword(e.getKey(), e.getValue()))
+                .map(e -> new BlockerKeyword(e.getKey(), e.getValue(),
+                        memberMap.getOrDefault(e.getKey(), java.util.Set.of()).size()))
                 .toList();
+
+        List<BlockerPyramidResponse.ActionPrescription> prescriptions = keywords.stream()
+                .limit(3)
+                .map(kw -> {
+                    String severity = kw.count() >= 3 ? "ERROR" : kw.count() == 2 ? "WARNING" : "INFO";
+                    String summary = kw.mentionedBy() + "명의 멤버가 총 " + kw.count() + "회 언급";
+                    String guide = kw.count() >= 3
+                            ? "이번 주 팀 회의에서 '" + kw.keyword() + "' 해결 안건을 상정하세요."
+                            : "'" + kw.keyword() + "' 관련 멤버와 1on1에서 구체적 원인을 파악하세요.";
+                    return new BlockerPyramidResponse.ActionPrescription(severity,
+                            kw.keyword() + " 반복 언급", summary, guide);
+                })
+                .toList();
+
+        return new BlockerPyramidResponse(keywords, prescriptions);
     }
 
     @Transactional(readOnly = true)
