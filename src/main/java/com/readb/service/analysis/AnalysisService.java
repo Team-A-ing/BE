@@ -629,12 +629,13 @@ public class AnalysisService {
                 ? teamRepository.findById(member.getTeamId()).map(t -> t.getName()).orElse(null)
                 : null;
 
-        int totalMeetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId).size();
+        int totalMeetings = (int) meetingRepository.countByMemberId(memberId);
 
         List<CareerEvent> events = careerEventRepository.findByUserIdOrderByOccurredAtDesc(memberId);
         int achievementCount = (int) events.stream()
                 .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT).count();
-        int leaderEndorsementCount = events.size();
+        int leaderEndorsementCount = (int) events.stream()
+                .filter(e -> e.getEventType() == CareerEventType.LEADER_ENDORSEMENT).count();
 
         int contributionPercentile = computeContributionPercentile(memberId, member.getTeamId());
 
