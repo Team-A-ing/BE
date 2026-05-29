@@ -684,6 +684,7 @@ public class AnalysisService {
         User member = userRepository.findById(memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         if (requester.getRole() != UserRole.LEADER
+                || requester.getTeamId() == null
                 || !requester.getTeamId().equals(member.getTeamId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
