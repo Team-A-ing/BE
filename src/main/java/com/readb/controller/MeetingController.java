@@ -43,7 +43,7 @@ public class MeetingController {
     }
 
     // 202 Accepted — 비동기 분석 시작, 클라이언트는 /status 폴링
-    @PostMapping("/{meetingId}/recording")
+    @PostMapping(value = "/{meetingId}/recording", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.ACCEPTED)
     public ApiResponse<Void> uploadRecording(
             @PathVariable Long meetingId,
