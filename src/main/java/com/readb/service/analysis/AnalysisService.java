@@ -651,10 +651,17 @@ public class AnalysisService {
     public List<CareerTimelineResponse> getCareerTimeline(Long requesterId, Long memberId, String type) {
         checkCareerAccess(requesterId, memberId);
 
-        List<CareerEvent> events = (type != null)
-                ? careerEventRepository.findByUserIdAndEventTypeOrderByOccurredAtDesc(
-                        memberId, CareerEventType.valueOf(type.toUpperCase()))
-                : careerEventRepository.findByUserIdOrderByOccurredAtDesc(memberId);
+        List<CareerEvent> events;
+        if (type != null) {
+            try {
+                CareerEventType eventType = CareerEventType.valueOf(type.toUpperCase());
+                events = careerEventRepository.findByUserIdAndEventTypeOrderByOccurredAtDesc(memberId, eventType);
+            } catch (IllegalArgumentException e) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT);
+            }
+        } else {
+            events = careerEventRepository.findByUserIdOrderByOccurredAtDesc(memberId);
+        }
 
         List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
         Map<Long, Integer> roundByMeetingId = buildRoundMap(meetings);
@@ -697,19 +704,22 @@ public class AnalysisService {
                 .filter(u -> u.getRole() != UserRole.LEADER)
                 .toList();
         if (teammates.size() <= 1) return 1;
-        int myCount = careerEventRepository.countByUserId(memberId);
+        List<Long> teammateIds = teammates.stream().map(User::getId).toList();
+        Map<Long, Long> countMap = careerEventRepository.countMapByUserIds(teammateIds);
+        long myCount = countMap.getOrDefault(memberId, 0L);
         long betterCount = teammates.stream()
                 .filter(u -> !u.getId().equals(memberId))
-                .mapToInt(u -> careerEventRepository.countByUserId(u.getId()))
+                .mapToLong(u -> countMap.getOrDefault(u.getId(), 0L))
                 .filter(c -> c > myCount)
                 .count();
         return (int) Math.round((double) betterCount / (teammates.size() - 1) * 100);
     }
 
     private String buildAiSummary(Long memberId) {
-        List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
-        if (meetings.isEmpty()) return null;
-        List<Long> ids = meetings.stream().map(Meeting::getId).limit(5).toList();
+        Pageable top5 = PageRequest.of(0, 5, Sort.by(Sort.Direction.DESC, "createdAt"));
+        List<Long> ids = meetingRepository.findByMemberId(memberId, top5)
+                .map(Meeting::getId).toList();
+        if (ids.isEmpty()) return null;
         List<String> tags = analysisRepository.findByMeetingIdIn(ids).stream()
                 .filter(a -> a.getCareerTags() != null)
                 .flatMap(a -> a.getCareerTags().stream())
