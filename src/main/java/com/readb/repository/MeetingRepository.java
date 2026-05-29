@@ -15,6 +15,8 @@ public interface MeetingRepository extends JpaRepository<Meeting, Long> {
     List<Meeting> findByMemberIdOrderByCreatedAtDesc(Long memberId);
     Page<Meeting> findByMemberId(Long memberId, Pageable pageable);
 
+    long countByMemberId(Long memberId);
+
     List<Meeting> findByLeaderIdOrderByCreatedAtDesc(Long leaderId);
 
     long countByLeaderIdAndMemberIdAndIdLessThanEqual(Long leaderId, Long memberId, Long id);
