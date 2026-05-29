@@ -113,15 +113,15 @@ public class WhisperAdapter implements SttAdapter {
 
         String contentType = file.getContentType();
         String filename = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase() : "";
-        boolean validByContentType = !StringUtils.hasText(contentType)
-                || contentType.startsWith("audio/")
-                || contentType.startsWith("video/")
-                || contentType.equals("application/octet-stream");
-        boolean validByExtension = filename.endsWith(".mp3") || filename.endsWith(".mp4")
+        boolean knownAudioVideoType = StringUtils.hasText(contentType)
+                && (contentType.startsWith("audio/") || contentType.startsWith("video/"));
+        boolean validExtension = filename.endsWith(".mp3") || filename.endsWith(".mp4")
                 || filename.endsWith(".m4a") || filename.endsWith(".wav")
                 || filename.endsWith(".webm") || filename.endsWith(".ogg")
                 || filename.endsWith(".flac") || filename.endsWith(".aac");
-        if (!validByContentType && !validByExtension) {
+        boolean unknownType = !StringUtils.hasText(contentType)
+                || contentType.equals("application/octet-stream");
+        if (!knownAudioVideoType && !(unknownType && validExtension)) {
             throw new BusinessException(ErrorCode.INVALID_FILE_FORMAT);
         }
     }
