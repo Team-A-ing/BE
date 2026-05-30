@@ -47,9 +47,7 @@ public class WhisperAdapter implements SttAdapter {
             String originalFilename = StringUtils.hasText(audioFile.getOriginalFilename())
                     ? audioFile.getOriginalFilename()
                     : "recording.webm";
-            String contentType = StringUtils.hasText(audioFile.getContentType())
-                    ? audioFile.getContentType()
-                    : MediaType.APPLICATION_OCTET_STREAM_VALUE;
+            String contentType = resolveContentType(audioFile.getContentType(), originalFilename);
 
             MultipartBodyBuilder builder = new MultipartBodyBuilder();
             builder.part("file", new ByteArrayResource(audioFile.getBytes()) {
@@ -99,6 +97,24 @@ public class WhisperAdapter implements SttAdapter {
             log.error("Unexpected Whisper transcription failure. file={}", audioFile.getOriginalFilename(), e);
             throw new BusinessException(ErrorCode.ANALYSIS_FAILED);
         }
+    }
+
+    private String resolveContentType(String declared, String filename) {
+        if (StringUtils.hasText(declared)
+                && !declared.equals(MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                && (declared.startsWith("audio/") || declared.startsWith("video/"))) {
+            return declared;
+        }
+        String lower = filename != null ? filename.toLowerCase() : "";
+        if (lower.endsWith(".mp3"))  return "audio/mpeg";
+        if (lower.endsWith(".mp4"))  return "video/mp4";
+        if (lower.endsWith(".m4a"))  return "audio/mp4";
+        if (lower.endsWith(".wav"))  return "audio/wav";
+        if (lower.endsWith(".webm")) return "audio/webm";
+        if (lower.endsWith(".ogg") || lower.endsWith(".oga")) return "audio/ogg";
+        if (lower.endsWith(".flac")) return "audio/flac";
+        if (lower.endsWith(".aac"))  return "audio/aac";
+        return MediaType.APPLICATION_OCTET_STREAM_VALUE;
     }
 
     private void validate(MultipartFile file) {
