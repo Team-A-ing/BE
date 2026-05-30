@@ -21,7 +21,7 @@ public class ActionPlanController {
             @PathVariable Long planId,
             @AuthenticationPrincipal Long leaderId) {
         ActionPlan plan = actionPlanRepository.findById(planId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(ErrorCode.ACTION_PLAN_NOT_FOUND));
         if (!plan.getLeaderId().equals(leaderId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }

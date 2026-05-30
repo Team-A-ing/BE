@@ -7,6 +7,7 @@ import com.readb.common.exception.ErrorCode;
 import com.readb.domain.analysis.Analysis;
 import com.readb.domain.meeting.Meeting;
 import com.readb.domain.promise.Promise;
+import com.readb.domain.promise.PromiseStatus;
 import com.readb.domain.recording.Recording;
 import com.readb.domain.survey.Survey;
 import com.readb.dto.analysis.AnalysisResultResponse;
@@ -349,7 +350,9 @@ public class AnalysisService {
         if (!(raw instanceof List<?> list)) return;
         for (Object item : list) {
             if (!(item instanceof Map<?, ?> p)) continue;
-            String content = String.valueOf(p.get("content"));
+            Object rawContent = p.get("content");
+            if (rawContent == null) continue;
+            String content = rawContent.toString();
             actionPlanRepository.save(ActionPlan.builder()
                     .meetingId(meetingId)
                     .leaderId(leaderId)
@@ -465,15 +468,14 @@ public class AnalysisService {
     }
 
     private ExecutionGapDetail buildExecutionGapDetail(Double score, Meeting meeting) {
-        List<Meeting> prev = meetingRepository.findByLeaderIdAndMemberIdOrderByCreatedAtDesc(
-                        meeting.getLeaderId(), meeting.getMemberId()).stream()
-                .filter(m -> !m.getId().equals(meeting.getId()))
-                .limit(1).toList();
+        java.util.Optional<Meeting> prev = meetingRepository
+                .findTopByLeaderIdAndMemberIdAndIdLessThanOrderByCreatedAtDesc(
+                        meeting.getLeaderId(), meeting.getMemberId(), meeting.getId());
         if (prev.isEmpty()) return new ExecutionGapDetail(score, 0, 0, 0);
-        List<Promise> prevPromises = promiseRepository.findByMeetingId(prev.get(0).getId());
+        List<Promise> prevPromises = promiseRepository.findByMeetingId(prev.get().getId());
         int total = prevPromises.size();
-        int fulfilled = (int) prevPromises.stream().filter(p -> p.getStatus().name().equals("DONE")).count();
-        int missed = (int) prevPromises.stream().filter(p -> p.getStatus().name().equals("MISSED")).count();
+        int fulfilled = (int) prevPromises.stream().filter(p -> p.getStatus() == PromiseStatus.DONE).count();
+        int missed = (int) prevPromises.stream().filter(p -> p.getStatus() == PromiseStatus.MISSED).count();
         return new ExecutionGapDetail(score, total, fulfilled, missed);
     }
 
@@ -528,12 +530,12 @@ public class AnalysisService {
     }
 
     private PromisesResponse buildPromises(Meeting meeting, Long meetingId) {
-        // previous: 직전 미팅의 약속
-        List<Meeting> prevMeetings = meetingRepository.findByLeaderIdAndMemberIdOrderByCreatedAtDesc(
-                        meeting.getLeaderId(), meeting.getMemberId()).stream()
-                .filter(m -> !m.getId().equals(meetingId)).limit(1).toList();
-        List<PreviousPromise> previous = prevMeetings.isEmpty() ? List.of()
-                : promiseRepository.findByMeetingId(prevMeetings.get(0).getId()).stream()
+        // previous: 직전 미팅의 약속 — DB에서 1건만 조회
+        java.util.Optional<Meeting> prevMeeting = meetingRepository
+                .findTopByLeaderIdAndMemberIdAndIdLessThanOrderByCreatedAtDesc(
+                        meeting.getLeaderId(), meeting.getMemberId(), meetingId);
+        List<PreviousPromise> previous = prevMeeting.isEmpty() ? List.of()
+                : promiseRepository.findByMeetingId(prevMeeting.get().getId()).stream()
                         .map(p -> new PreviousPromise(p.getId(), p.getContent(), p.getStatus().name()))
                         .toList();
 
@@ -846,12 +848,14 @@ public class AnalysisService {
                 ? teamRepository.findById(member.getTeamId()).map(t -> t.getName()).orElse(null)
                 : null;
 
-        int totalMeetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId).size();
+        int totalMeetings = (int) meetingRepository.countByMemberId(memberId);
 
         List<CareerEvent> events = careerEventRepository.findByUserIdOrderByOccurredAtDesc(memberId);
         int achievementCount = (int) events.stream()
                 .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT).count();
-        int leaderEndorsementCount = events.size();
+        int leaderEndorsementCount = (int) events.stream()
+                .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT
+                        || e.getEventType() == CareerEventType.PROPOSAL_ADOPTED).count();
 
         int contributionPercentile = computeContributionPercentile(memberId, member.getTeamId());
 

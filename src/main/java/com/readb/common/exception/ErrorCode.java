@@ -23,6 +23,7 @@ public enum ErrorCode {
 
     // Meeting / Recording
     MEETING_NOT_FOUND(HttpStatus.NOT_FOUND, "미팅을 찾을 수 없습니다."),
+    ACTION_PLAN_NOT_FOUND(HttpStatus.NOT_FOUND, "액션 플랜을 찾을 수 없습니다."),
     RECORDING_NOT_FOUND(HttpStatus.NOT_FOUND, "녹음 파일을 찾을 수 없습니다."),
     FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "파일 크기가 25MB를 초과합니다."),
     INVALID_FILE_FORMAT(HttpStatus.BAD_REQUEST, "지원하지 않는 파일 형식입니다."),
