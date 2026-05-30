@@ -13,6 +13,7 @@ import com.readb.service.meeting.MeetingService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -43,7 +44,7 @@ public class MeetingController {
     }
 
     // 202 Accepted — 비동기 분석 시작, 클라이언트는 /status 폴링
-    @PostMapping(value = "/{meetingId}/recording", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(value = "/{meetingId}/recording", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.ACCEPTED)
     public ApiResponse<Void> uploadRecording(
             @PathVariable Long meetingId,

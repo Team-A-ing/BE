@@ -1,19 +1,18 @@
-package com.readb.domain.promise;
+package com.readb.domain.actionplan;
 
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "promises")
+@Table(name = "action_plans")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-public class Promise {
+public class ActionPlan {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -22,27 +21,21 @@ public class Promise {
     @Column(name = "meeting_id", nullable = false)
     private Long meetingId;
 
-    @Column(name = "owner_id", nullable = false)
-    private Long ownerId;
+    @Column(name = "leader_id", nullable = false)
+    private Long leaderId;
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
-    @Column(length = 50)
-    private String category;
-
-    private LocalDate deadline;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     @Builder.Default
-    private PromiseStatus status = PromiseStatus.PENDING;
+    @Column(name = "is_completed", nullable = false)
+    private boolean isCompleted = false;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
-    public void updateStatus(PromiseStatus status) {
-        this.status = status;
+    public void complete() {
+        this.isCompleted = true;
     }
 }

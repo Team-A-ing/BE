@@ -7,10 +7,13 @@ import com.readb.common.exception.ErrorCode;
 import com.readb.domain.analysis.Analysis;
 import com.readb.domain.meeting.Meeting;
 import com.readb.domain.promise.Promise;
+import com.readb.domain.promise.PromiseStatus;
 import com.readb.domain.recording.Recording;
 import com.readb.domain.survey.Survey;
 import com.readb.dto.analysis.AnalysisResultResponse;
+import com.readb.dto.analysis.AnalysisResultResponse.*;
 import com.readb.dto.analysis.BlockerKeyword;
+import com.readb.dto.analysis.BlockerPyramidResponse;
 import com.readb.dto.analysis.CareerMemoryResponse;
 import com.readb.dto.analysis.HonestyDirection;
 import com.readb.dto.analysis.PortfolioResponse;
@@ -19,11 +22,13 @@ import com.readb.dto.analysis.RiskLevel;
 import com.readb.dto.analysis.SpeechTrendResponse;
 import com.readb.dto.team.TeamDashboardResponse;
 import com.readb.domain.user.User;
+import com.readb.domain.actionplan.ActionPlan;
 import com.readb.domain.career.CareerEvent;
 import com.readb.domain.career.CareerEventType;
 import com.readb.domain.user.UserRole;
 import com.readb.dto.analysis.CareerStatsResponse;
 import com.readb.dto.analysis.CareerTimelineResponse;
+import com.readb.repository.ActionPlanRepository;
 import com.readb.repository.AnalysisRepository;
 import com.readb.repository.CareerEventRepository;
 import com.readb.repository.MeetingRepository;
@@ -70,10 +75,14 @@ public class AnalysisService {
             [Speech Act 분류 — 멤버 발화만, 애매하면 포함하지 마세요]
             - vulnerability: 취약성 표현 ("잘 모르겠습니다", "실수했습니다", "도움이 필요합니다")
               제외: 사교적 겸손, 관용표현
-            - dissent: 건설적 반대 ("다른 의견인데요", "그 방법보다는...")
+            - constructiveDissent: 건설적 반대 ("다른 의견인데요", "그 방법보다는...")
               제외: 단순 불만, 인신공격
             - initiative: 자발적 제안 ("제가 해볼게요", "이런 아이디어가 있는데")
               제외: 지시에 대한 단순 수락
+
+            [발화 비율]
+            전체 발화 분량(문자수 또는 시간) 기준으로 리더/멤버 발화 비율을 추정하세요.
+            recommendedLeaderRatio는 항상 40입니다.
 
             [기타 추출]
             - topics: 주요 논의 주제 (최대 5개)
@@ -84,9 +93,10 @@ public class AnalysisService {
             {
               "speechActs": {
                 "vulnerability": [{"text": "원문 그대로", "timestamp": 초단위_숫자}],
-                "dissent": [{"text": "원문 그대로", "timestamp": 초단위_숫자}],
+                "constructiveDissent": [{"text": "원문 그대로", "timestamp": 초단위_숫자}],
                 "initiative": [{"text": "원문 그대로", "timestamp": 초단위_숫자}]
               },
+              "talkRatio": {"leaderRatio": 숫자, "memberRatio": 숫자},
               "topics": ["주제1", "주제2"],
               "blockerKeywords": ["키워드1", "키워드2"],
               "promises": [{"content": "약속 내용", "owner": "leader 또는 member"}]
@@ -103,7 +113,7 @@ public class AnalysisService {
 
             변환표:
             - Vulnerability (max 40): 0회→0, 1회→20, 2회→32, 3회→38, 4회+→40
-            - Dissent (max 35): 0회→0, 1회→18, 2회→28, 3회→33, 4회+→35
+            - constructiveDissent (max 35): 0회→0, 1회→18, 2회→28, 3회→33, 4회+→35
             - Initiative (max 25): 0회→0, 1회→13, 2회→20, 3회→24, 4회+→25
             safetyScore = V_score + D_score + I_score
 
@@ -112,25 +122,42 @@ public class AnalysisService {
             surveyScore가 없으면: null
 
             [Alignment Gap (0–100)]
-            서베이 topics vs 실제 미팅 topics 일치도 추정. 서베이 정보 없으면 50.
+            서베이 topics vs 실제 미팅 topics 일치도를 추정하고, 한 문장으로 구체적인 이유를 작성하세요.
+            서베이 정보 없으면 score=50, detail="서베이 정보 없음"
 
             [Execution Gap (0–100)]
             이전 약속이 이번 transcript에서 언급/이행되었는지 평가.
             이전 약속 없으면: null
             완료→100, 진행중→70, 미이행+사유→50, 미이행+무사유→20, 전혀 언급없음→0
 
-            [코칭 피드백 원칙 — 반드시 준수]
+            [코칭 피드백 — 반드시 준수]
             절대 금지: AI 해석 라벨 ("수동 공격적", "번아웃 징후", "소극적 참여" 등)
             허용: 관찰 가능한 사실만 (원문 인용 + 타임스탬프, 횟수, 수치)
-            severity: SAFE / CAUTION / WARNING / DANGER
+            severity: ERROR / WARNING / SUCCESS / INFO
+            - feedbacks: 리더를 위한 코칭 피드백 (최대 4개, 중요한 것부터)
+              - title: 한 줄 요약
+              - evidenceQuote: 관련 발화 원문 인용 (없으면 빈 문자열)
+              - dataSummary: 수치/사실 근거
+              - actionGuide: 리더가 다음에 취할 행동
+            - nextActionPlans: 이번 미팅 결과로 리더가 해야 할 구체적 실행 과제 (최대 4개)
 
             반드시 아래 JSON 형식으로만 응답하세요:
             {
               "safetyScore": 0.0,
               "alignmentGap": 0.0,
+              "alignmentGapDetail": "...",
               "honestyGap": null,
               "executionGap": null,
-              "leaderFeedback": {"summary": "...", "severity": "SAFE"},
+              "feedbacks": [
+                {
+                  "severity": "ERROR",
+                  "title": "...",
+                  "evidenceQuote": "...",
+                  "dataSummary": "...",
+                  "actionGuide": "..."
+                }
+              ],
+              "nextActionPlans": [{"content": "..."}],
               "memberFeedback": {"summary": "..."},
               "careerTags": ["태그1"]
             }
@@ -146,6 +173,7 @@ public class AnalysisService {
     private final UserRepository userRepository;
     private final CareerEventRepository careerEventRepository;
     private final TeamRepository teamRepository;
+    private final ActionPlanRepository actionPlanRepository;
     private final LlmAdapter gptAdapter;
     private final LlmAdapter claudeAdapter;
     private final ObjectMapper objectMapper;
@@ -159,6 +187,7 @@ public class AnalysisService {
             UserRepository userRepository,
             CareerEventRepository careerEventRepository,
             TeamRepository teamRepository,
+            ActionPlanRepository actionPlanRepository,
             @Qualifier("gptMiniAdapter") LlmAdapter gptAdapter,
             @Qualifier("claudeAdapter") LlmAdapter claudeAdapter,
             ObjectMapper objectMapper) {
@@ -170,6 +199,7 @@ public class AnalysisService {
         this.userRepository = userRepository;
         this.careerEventRepository = careerEventRepository;
         this.teamRepository = teamRepository;
+        this.actionPlanRepository = actionPlanRepository;
         this.gptAdapter = gptAdapter;
         this.claudeAdapter = claudeAdapter;
         this.objectMapper = objectMapper;
@@ -234,6 +264,9 @@ public class AnalysisService {
 
         promiseRepository.deleteByMeetingId(meetingId);
         savePromises(meetingId, meeting, step2);
+
+        actionPlanRepository.deleteByMeetingId(meetingId);
+        saveActionPlans(meetingId, meeting.getLeaderId(), step3);
     }
 
     // ── 내부 헬퍼 ─────────────────────────────────────────────────────────────
@@ -281,13 +314,15 @@ public class AnalysisService {
                 .meetingId(meetingId)
                 .safetyScore(toDouble(step3.get("safetyScore")))
                 .alignmentGap(toDouble(step3.get("alignmentGap")))
+                .alignmentGapDetail((String) step3.get("alignmentGapDetail"))
                 .honestyGap(toDouble(step3.get("honestyGap")))
                 .executionGap(toDouble(step3.get("executionGap")))
                 .speechActs((Map<String, Object>) step2.get("speechActs"))
                 .blockerKeywords((List<String>) step2.get("blockerKeywords"))
-                .leaderFeedback((Map<String, Object>) step3.get("leaderFeedback"))
+                .feedbacks((List<Map<String, Object>>) step3.get("feedbacks"))
                 .memberFeedback((Map<String, Object>) step3.get("memberFeedback"))
                 .careerTags((List<String>) step3.get("careerTags"))
+                .talkRatio((Map<String, Object>) step2.get("talkRatio"))
                 .baselineData(Map.of())
                 .build();
     }
@@ -304,6 +339,23 @@ public class AnalysisService {
             promiseRepository.save(Promise.builder()
                     .meetingId(meetingId)
                     .ownerId(ownerId)
+                    .content(content)
+                    .build());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void saveActionPlans(Long meetingId, Long leaderId, Map<String, Object> step3) {
+        Object raw = step3.get("nextActionPlans");
+        if (!(raw instanceof List<?> list)) return;
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> p)) continue;
+            Object rawContent = p.get("content");
+            if (rawContent == null) continue;
+            String content = rawContent.toString();
+            actionPlanRepository.save(ActionPlan.builder()
+                    .meetingId(meetingId)
+                    .leaderId(leaderId)
                     .content(content)
                     .build());
         }
@@ -355,10 +407,152 @@ public class AnalysisService {
     public AnalysisResultResponse getResult(Long meetingId) {
         Analysis a = analysisRepository.findByMeetingId(meetingId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_NOT_FOUND));
-        return new AnalysisResultResponse(meetingId, a.getAlignmentGap(), a.getHonestyGap(),
-                a.getExecutionGap(), a.getSafetyScore(), a.getSpeechActs(), a.getBlockerKeywords(),
-                a.getLeaderFeedback(), a.getMemberFeedback(), a.getCareerTags(), a.getBaselineData(),
-                computeDirection(a.getHonestyGap()), computeRiskLevel(a.getHonestyGap()));
+        Meeting meeting = meetingRepository.findById(meetingId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
+        User member = userRepository.findById(meeting.getMemberId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        // 미팅 기본 정보
+        Integer durationSec = recordingRepository.findByMeetingId(meetingId)
+                .map(Recording::getDurationSec).orElse(null);
+        int round = (int) meetingRepository.countByLeaderIdAndMemberIdAndIdLessThanEqual(
+                meeting.getLeaderId(), meeting.getMemberId(), meetingId);
+        String meetingDate = meeting.getScheduledAt() != null
+                ? meeting.getScheduledAt().toLocalDate().toString() : null;
+
+        // Survey score (honestyGap 상세용)
+        Double surveyScore = surveyRepository.findByMeetingIdAndMemberId(meetingId, meeting.getMemberId())
+                .map(s -> computeSurveyScore(s.getScores())).orElse(null);
+
+        // gaps
+        GapsResponse gaps = buildGaps(a, surveyScore, meeting);
+
+        // speechActs
+        SpeechActsResponse speechActs = buildSpeechActs(a);
+
+        // talkRatio
+        TalkRatioResponse talkRatio = buildTalkRatio(a.getTalkRatio());
+
+        // feedbacks
+        List<FeedbackItem> feedbacks = buildFeedbacks(a.getFeedbacks());
+
+        // nextActionPlans
+        List<ActionPlanItem> nextActionPlans = actionPlanRepository.findByMeetingIdOrderByIdAsc(meetingId)
+                .stream().map(p -> new ActionPlanItem(p.getId(), p.getContent(), p.isCompleted()))
+                .toList();
+
+        // promises
+        PromisesResponse promises = buildPromises(meeting, meetingId);
+
+        return new AnalysisResultResponse(meetingId, round, member.getName(), member.getJobTitle(),
+                meetingDate, durationSec, gaps, a.getSafetyScore(), speechActs,
+                talkRatio, feedbacks, nextActionPlans, promises);
+    }
+
+    private GapsResponse buildGaps(Analysis a, Double surveyScore, Meeting meeting) {
+        // alignmentGap
+        AlignmentGapDetail alignmentGap = new AlignmentGapDetail(a.getAlignmentGap(), a.getAlignmentGapDetail());
+
+        // honestyGap
+        Double gap = (surveyScore != null && a.getSafetyScore() != null)
+                ? Math.round((surveyScore - a.getSafetyScore()) * 10.0) / 10.0 : a.getHonestyGap();
+        HonestyDirection dir = computeDirection(gap);
+        RiskLevel risk = computeRiskLevel(gap);
+        HonestyGapDetail honestyGap = new HonestyGapDetail(surveyScore, a.getSafetyScore(), gap,
+                dir != null ? dir.name() : null, risk != null ? risk.name() : null);
+
+        // executionGap — 이전 미팅 promise 집계
+        ExecutionGapDetail executionGap = buildExecutionGapDetail(a.getExecutionGap(), meeting);
+
+        return new GapsResponse(alignmentGap, honestyGap, executionGap);
+    }
+
+    private ExecutionGapDetail buildExecutionGapDetail(Double score, Meeting meeting) {
+        java.util.Optional<Meeting> prev = meetingRepository
+                .findTopByLeaderIdAndMemberIdAndIdLessThanOrderByCreatedAtDesc(
+                        meeting.getLeaderId(), meeting.getMemberId(), meeting.getId());
+        if (prev.isEmpty()) return new ExecutionGapDetail(score, 0, 0, 0);
+        List<Promise> prevPromises = promiseRepository.findByMeetingId(prev.get().getId());
+        int total = prevPromises.size();
+        int fulfilled = (int) prevPromises.stream().filter(p -> p.getStatus() == PromiseStatus.DONE).count();
+        int missed = (int) prevPromises.stream().filter(p -> p.getStatus() == PromiseStatus.MISSED).count();
+        return new ExecutionGapDetail(score, total, fulfilled, missed);
+    }
+
+    @SuppressWarnings("unchecked")
+    private SpeechActsResponse buildSpeechActs(Analysis a) {
+        Map<String, Object> acts = a.getSpeechActs();
+        Map<String, Object> baseline = a.getBaselineData();
+        return new SpeechActsResponse(
+                buildSpeechActDetail(acts, "vulnerability", baseline, "prev_avg_vulnerability"),
+                buildSpeechActDetail(acts, "constructiveDissent", baseline, "prev_avg_dissent"),
+                buildSpeechActDetail(acts, "initiative", baseline, "prev_avg_initiative"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private SpeechActDetail buildSpeechActDetail(Map<String, Object> acts, String key,
+                                                  Map<String, Object> baseline, String baselineKey) {
+        if (acts == null) return new SpeechActDetail(0, null, null, List.of());
+        Object raw = acts.get(key);
+        List<Map<String, Object>> rawList = (raw instanceof List<?> l)
+                ? l.stream().filter(i -> i instanceof Map).map(i -> (Map<String, Object>) i).toList()
+                : List.of();
+        int count = rawList.size();
+        Double baselineAvg = (baseline != null) ? toDouble(baseline.get(baselineKey)) : null;
+        Integer changeRate = (baselineAvg != null && baselineAvg > 0)
+                ? (int) Math.round((count - baselineAvg) / baselineAvg * 100) : null;
+        List<SpeechActInstance> instances = rawList.stream()
+                .map(i -> new SpeechActInstance(
+                        (String) i.get("text"),
+                        formatTimestamp(i.get("timestamp"))))
+                .toList();
+        return new SpeechActDetail(count, baselineAvg, changeRate, instances);
+    }
+
+    private TalkRatioResponse buildTalkRatio(Map<String, Object> raw) {
+        if (raw == null) return new TalkRatioResponse(0, 0, 40);
+        int leader = raw.get("leaderRatio") instanceof Number n ? n.intValue() : 0;
+        int memberR = raw.get("memberRatio") instanceof Number n ? n.intValue() : 0;
+        return new TalkRatioResponse(leader, memberR, 40);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<FeedbackItem> buildFeedbacks(List<Map<String, Object>> raw) {
+        if (raw == null) return List.of();
+        int[] idx = {1};
+        return raw.stream().map(fb -> new FeedbackItem(
+                idx[0]++,
+                (String) fb.get("severity"),
+                (String) fb.get("title"),
+                (String) fb.get("evidenceQuote"),
+                (String) fb.get("dataSummary"),
+                (String) fb.get("actionGuide"))).toList();
+    }
+
+    private PromisesResponse buildPromises(Meeting meeting, Long meetingId) {
+        // previous: 직전 미팅의 약속 — DB에서 1건만 조회
+        java.util.Optional<Meeting> prevMeeting = meetingRepository
+                .findTopByLeaderIdAndMemberIdAndIdLessThanOrderByCreatedAtDesc(
+                        meeting.getLeaderId(), meeting.getMemberId(), meetingId);
+        List<PreviousPromise> previous = prevMeeting.isEmpty() ? List.of()
+                : promiseRepository.findByMeetingId(prevMeeting.get().getId()).stream()
+                        .map(p -> new PreviousPromise(p.getId(), p.getContent(), p.getStatus().name()))
+                        .toList();
+
+        // new: 현재 미팅의 약속
+        List<NewPromise> newPromises = promiseRepository.findByMeetingId(meetingId).stream()
+                .map(p -> new NewPromise(p.getId(), p.getContent(), p.getCategory(),
+                        p.getDeadline() != null ? p.getDeadline().toString() : null,
+                        p.getStatus().name()))
+                .toList();
+
+        return new PromisesResponse(previous, newPromises);
+    }
+
+    private String formatTimestamp(Object seconds) {
+        if (seconds == null) return null;
+        int s = ((Number) seconds).intValue();
+        return String.format("%02d:%02d", s / 60, s % 60);
     }
 
     @Transactional(readOnly = true)
@@ -500,22 +694,47 @@ public class AnalysisService {
     }
 
     @Transactional(readOnly = true)
-    public List<BlockerKeyword> getBlockerData(Long teamId) {
-        List<Long> meetingIds = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId)
-                .stream().map(Meeting::getId).toList();
-        if (meetingIds.isEmpty()) return List.of();
+    public BlockerPyramidResponse getBlockerData(Long teamId) {
+        List<Meeting> meetings = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId);
+        if (meetings.isEmpty()) return new BlockerPyramidResponse(List.of(), List.of());
 
-        Map<String, Integer> counts = new LinkedHashMap<>();
+        List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
+        Map<Long, Long> memberByMeeting = meetings.stream()
+                .collect(Collectors.toMap(Meeting::getId, Meeting::getMemberId));
+
+        // 키워드별 (총 출현 횟수, 언급 멤버 Set) 집계
+        Map<String, Integer> countMap = new LinkedHashMap<>();
+        Map<String, java.util.Set<Long>> memberMap = new LinkedHashMap<>();
         analysisRepository.findByMeetingIdIn(meetingIds).forEach(analysis -> {
             List<String> keywords = analysis.getBlockerKeywords();
             if (keywords == null) return;
-            keywords.forEach(kw -> counts.merge(kw, 1, Integer::sum));
+            Long memberId = memberByMeeting.get(analysis.getMeetingId());
+            keywords.forEach(kw -> {
+                countMap.merge(kw, 1, Integer::sum);
+                memberMap.computeIfAbsent(kw, k -> new java.util.HashSet<>()).add(memberId);
+            });
         });
 
-        return counts.entrySet().stream()
+        List<BlockerKeyword> keywords = countMap.entrySet().stream()
                 .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                .map(e -> new BlockerKeyword(e.getKey(), e.getValue()))
+                .map(e -> new BlockerKeyword(e.getKey(), e.getValue(),
+                        memberMap.getOrDefault(e.getKey(), java.util.Set.of()).size()))
                 .toList();
+
+        List<BlockerPyramidResponse.ActionPrescription> prescriptions = keywords.stream()
+                .limit(3)
+                .map(kw -> {
+                    String severity = kw.count() >= 3 ? "ERROR" : kw.count() == 2 ? "WARNING" : "INFO";
+                    String summary = kw.mentionedBy() + "명의 멤버가 총 " + kw.count() + "회 언급";
+                    String guide = kw.count() >= 3
+                            ? "이번 주 팀 회의에서 '" + kw.keyword() + "' 해결 안건을 상정하세요."
+                            : "'" + kw.keyword() + "' 관련 멤버와 1on1에서 구체적 원인을 파악하세요.";
+                    return new BlockerPyramidResponse.ActionPrescription(severity,
+                            kw.keyword() + " 반복 언급", summary, guide);
+                })
+                .toList();
+
+        return new BlockerPyramidResponse(keywords, prescriptions);
     }
 
     @Transactional(readOnly = true)
@@ -635,7 +854,8 @@ public class AnalysisService {
         int achievementCount = (int) events.stream()
                 .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT).count();
         int leaderEndorsementCount = (int) events.stream()
-                .filter(e -> e.getEventType() == CareerEventType.LEADER_ENDORSEMENT).count();
+                .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT
+                        || e.getEventType() == CareerEventType.PROPOSAL_ADOPTED).count();
 
         int contributionPercentile = computeContributionPercentile(memberId, member.getTeamId());
 
