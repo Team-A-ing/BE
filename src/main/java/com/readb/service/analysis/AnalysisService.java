@@ -11,6 +11,7 @@ import com.readb.domain.promise.PromiseStatus;
 import com.readb.domain.recording.Recording;
 import com.readb.domain.survey.Survey;
 import com.readb.dto.analysis.AnalysisResultResponse;
+import com.readb.dto.meeting.PreBriefingResponse;
 import com.readb.dto.analysis.AnalysisResultResponse.*;
 import com.readb.dto.analysis.BlockerKeyword;
 import com.readb.dto.analysis.BlockerPyramidResponse;
@@ -42,6 +43,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -547,6 +549,155 @@ public class AnalysisService {
                 .toList();
 
         return new PromisesResponse(previous, newPromises);
+    }
+
+    // ── Pre-Meeting Briefing ──────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    public PreBriefingResponse getPreBriefing(Long meetingId) {
+        Meeting meeting = meetingRepository.findById(meetingId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
+        User member = userRepository.findById(meeting.getMemberId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        int round = (int) meetingRepository.countByLeaderIdAndMemberIdAndIdLessThanEqual(
+                meeting.getLeaderId(), meeting.getMemberId(), meetingId);
+
+        // 이번 미팅 사전 서베이
+        PreBriefingResponse.SurveyBrief survey = surveyRepository
+                .findByMeetingIdAndMemberId(meetingId, meeting.getMemberId())
+                .map(s -> {
+                    Map<String, Object> sc = s.getScores();
+                    Integer energy = sc.get("energyLevel") instanceof Number n ? n.intValue() : null;
+                    List<String> issues = sc.get("issues") instanceof List<?> l
+                            ? l.stream().map(Object::toString).toList() : List.of();
+                    List<String> roles = sc.get("desiredRoles") instanceof List<?> l
+                            ? l.stream().map(Object::toString).toList() : List.of();
+                    return new PreBriefingResponse.SurveyBrief(true, energy, issues, roles, computeSurveyScore(sc));
+                })
+                .orElse(new PreBriefingResponse.SurveyBrief(false, null, List.of(), List.of(), null));
+
+        // 이전 미팅 목록
+        List<Meeting> prevMeetings = meetingRepository
+                .findByLeaderIdAndMemberIdOrderByCreatedAtDesc(meeting.getLeaderId(), meeting.getMemberId())
+                .stream().filter(m -> !m.getId().equals(meetingId)).toList();
+
+        // 이전 미팅 분석 데이터
+        PreBriefingResponse.LastMeetingSummary lastMeeting = null;
+        if (!prevMeetings.isEmpty()) {
+            List<Long> prevIds = prevMeetings.stream().map(Meeting::getId).limit(5).toList();
+            analysisRepository.findTopByMeetingIdInOrderByMeetingIdDesc(prevIds).ifPresent(a -> {});
+            lastMeeting = analysisRepository.findTopByMeetingIdInOrderByMeetingIdDesc(prevIds)
+                    .map(a -> {
+                        Double safetyScore = a.getSafetyScore();
+
+                        // Safety Score 변화량 (baselineData 기반)
+                        Double change = null;
+                        if (a.getBaselineData() != null && safetyScore != null) {
+                            Object prev = a.getBaselineData().get("prev_avg_safety");
+                            if (prev instanceof Number n) {
+                                change = Math.round((safetyScore - n.doubleValue()) * 10.0) / 10.0;
+                            }
+                        }
+
+                        // Quadrant
+                        Double prevSurveyScore = surveyRepository.findByMeetingId(prevMeetings.get(0).getId())
+                                .stream().findFirst().map(s -> computeSurveyScore(s.getScores())).orElse(null);
+                        String quadrant = computeQuadrant(safetyScore, prevSurveyScore);
+
+                        // Honesty Gap
+                        Double gap = a.getHonestyGap();
+                        HonestyDirection dir = computeDirection(gap);
+                        RiskLevel risk = computeRiskLevel(gap);
+                        PreBriefingResponse.HonestyGapBrief honestyGap = (dir != null && risk != null)
+                                ? new PreBriefingResponse.HonestyGapBrief(dir.name(), risk.name()) : null;
+
+                        // Speech Act 이상 신호 (Fact-Based)
+                        List<String> alerts = buildSpeechActAlerts(a.getSpeechActs(), a.getBaselineData());
+
+                        // 이전 blocker 키워드
+                        List<String> blockers = a.getBlockerKeywords() != null ? a.getBlockerKeywords() : List.of();
+
+                        return new PreBriefingResponse.LastMeetingSummary(
+                                safetyScore, change, quadrant, honestyGap, alerts, blockers);
+                    }).orElse(null);
+        }
+
+        // PENDING 약속 전체 (이전 미팅에서 리더가 한 약속)
+        List<PreBriefingResponse.PendingPromise> pendingPromises = List.of();
+        if (!prevMeetings.isEmpty()) {
+            List<Long> prevIds = prevMeetings.stream().map(Meeting::getId).toList();
+            pendingPromises = promiseRepository.findByMeetingIdIn(prevIds).stream()
+                    .filter(p -> p.getOwnerId().equals(meeting.getLeaderId())
+                            && p.getStatus() == PromiseStatus.PENDING)
+                    .map(p -> {
+                        boolean overdue = p.getDeadline() != null && p.getDeadline().isBefore(LocalDate.now());
+                        return new PreBriefingResponse.PendingPromise(
+                                p.getId(), p.getContent(),
+                                p.getDeadline() != null ? p.getDeadline().toString() : null,
+                                overdue);
+                    }).toList();
+        }
+
+        // 추천 주제 (rule-based)
+        List<String> recommendedTopics = buildRecommendedTopics(pendingPromises, lastMeeting, survey);
+
+        String scheduledAt = meeting.getScheduledAt() != null ? meeting.getScheduledAt().toString() : null;
+        return new PreBriefingResponse(meetingId, round, member.getName(), member.getJobTitle(),
+                scheduledAt, survey, lastMeeting, pendingPromises, recommendedTopics);
+    }
+
+    private String computeQuadrant(Double safetyScore, Double surveyScore) {
+        if (safetyScore == null || surveyScore == null) return null;
+        boolean safetyHigh = safetyScore >= 50;
+        boolean surveyHigh = surveyScore >= 50;
+        if (surveyHigh && safetyHigh) return "STABLE";
+        if (surveyHigh) return "SILENT_RISK";
+        if (safetyHigh) return "CONSERVATIVE";
+        return "EXPLICIT_RISK";
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> buildSpeechActAlerts(Map<String, Object> speechActs, Map<String, Object> baselineData) {
+        if (speechActs == null) return List.of();
+        List<String> alerts = new ArrayList<>();
+        String[] keys = {"vulnerability", "constructiveDissent", "initiative"};
+        String[] baselineKeys = {"prev_avg_vulnerability", "prev_avg_dissent", "prev_avg_initiative"};
+        String[] labels = {"Vulnerability", "Constructive Dissent", "Initiative"};
+        for (int i = 0; i < keys.length; i++) {
+            Object raw = speechActs.get(keys[i]);
+            int count = raw instanceof List<?> l ? l.size() : 0;
+            if (baselineData != null && baselineData.get(baselineKeys[i]) instanceof Number n) {
+                double avg = n.doubleValue();
+                if (count == 0 && avg >= 1.0) {
+                    alerts.add(labels[i] + " 0회 (이전 평균 " + String.format("%.1f", avg) + "회)");
+                }
+            } else if (count == 0) {
+                alerts.add(labels[i] + " 0회");
+            }
+        }
+        return alerts;
+    }
+
+    private List<String> buildRecommendedTopics(
+            List<PreBriefingResponse.PendingPromise> pendingPromises,
+            PreBriefingResponse.LastMeetingSummary lastMeeting,
+            PreBriefingResponse.SurveyBrief survey) {
+        List<String> topics = new ArrayList<>();
+        // 1. 미이행 약속 팔로업 항상 최우선
+        pendingPromises.stream().limit(2)
+                .forEach(p -> topics.add("약속 팔로업: " + p.content()));
+        // 2. SILENT_RISK 상태면 발화 기회 확인
+        if (lastMeeting != null && "SILENT_RISK".equals(lastMeeting.quadrant())) {
+            topics.add("멤버 발화가 줄었습니다 — 편하게 이야기할 수 있는지 확인해보세요");
+        }
+        // 3. 서베이 이슈 기반
+        if (survey.submitted() && survey.issues() != null) {
+            survey.issues().stream().limit(2)
+                    .forEach(issue -> topics.add("서베이 이슈 확인: " + issue));
+        }
+        return topics;
     }
 
     private String formatTimestamp(Object seconds) {
