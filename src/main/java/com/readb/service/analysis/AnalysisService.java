@@ -581,7 +581,7 @@ public class AnalysisService {
         // 이전 미팅 목록
         List<Meeting> prevMeetings = meetingRepository
                 .findByLeaderIdAndMemberIdOrderByCreatedAtDesc(meeting.getLeaderId(), meeting.getMemberId())
-                .stream().filter(m -> !m.getId().equals(meetingId)).toList();
+                .stream().filter(m -> m.getId() < meetingId).toList();
 
         // 이전 미팅 분석 데이터
         PreBriefingResponse.LastMeetingSummary lastMeeting = null;
