@@ -578,7 +578,7 @@ public class AnalysisService {
                 })
                 .orElse(new PreBriefingResponse.SurveyBrief(false, null, List.of(), List.of(), null));
 
-        // 이전 미팅 목록
+        // 이전 미팅 목록 — 현재 meetingId보다 ID가 작은 것만 (미래 미팅 제외)
         List<Meeting> prevMeetings = meetingRepository
                 .findByLeaderIdAndMemberIdOrderByCreatedAtDesc(meeting.getLeaderId(), meeting.getMemberId())
                 .stream().filter(m -> m.getId() < meetingId).toList();
@@ -587,7 +587,6 @@ public class AnalysisService {
         PreBriefingResponse.LastMeetingSummary lastMeeting = null;
         if (!prevMeetings.isEmpty()) {
             List<Long> prevIds = prevMeetings.stream().map(Meeting::getId).limit(5).toList();
-            analysisRepository.findTopByMeetingIdInOrderByMeetingIdDesc(prevIds).ifPresent(a -> {});
             lastMeeting = analysisRepository.findTopByMeetingIdInOrderByMeetingIdDesc(prevIds)
                     .map(a -> {
                         Double safetyScore = a.getSafetyScore();
@@ -601,15 +600,16 @@ public class AnalysisService {
                             }
                         }
 
-                        // Quadrant
-                        Double prevSurveyScore = surveyRepository.findByMeetingId(prevMeetings.get(0).getId())
-                                .stream().findFirst().map(s -> computeSurveyScore(s.getScores())).orElse(null);
+                        // Quadrant — analysis와 동일한 미팅의 서베이 사용
+                        Double prevSurveyScore = surveyRepository
+                                .findByMeetingIdAndMemberId(a.getMeetingId(), meeting.getMemberId())
+                                .map(s -> computeSurveyScore(s.getScores())).orElse(null);
                         String quadrant = computeQuadrant(safetyScore, prevSurveyScore);
 
-                        // Honesty Gap
+                        // Honesty Gap — gap이 null이면 HonestyGapBrief도 null
                         Double gap = a.getHonestyGap();
-                        HonestyDirection dir = computeDirection(gap);
-                        RiskLevel risk = computeRiskLevel(gap);
+                        HonestyDirection dir = gap != null ? computeDirection(gap) : null;
+                        RiskLevel risk = gap != null ? computeRiskLevel(gap) : null;
                         PreBriefingResponse.HonestyGapBrief honestyGap = (dir != null && risk != null)
                                 ? new PreBriefingResponse.HonestyGapBrief(dir.name(), risk.name()) : null;
 
