@@ -30,5 +30,7 @@ public interface CareerEventRepository extends JpaRepository<CareerEvent, Long> 
 
     List<CareerEvent> findByMeetingId(Long meetingId);
 
+    void deleteByMeetingId(Long meetingId);
+
     List<CareerEvent> findByMeetingIdAndEventTypeIn(Long meetingId, List<CareerEventType> types);
 }
