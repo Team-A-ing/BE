@@ -354,7 +354,7 @@ public class AnalysisService {
         saveActionPlans(meetingId, meeting.getLeaderId(), step3);
 
         careerEventRepository.deleteByMeetingId(meetingId);
-        saveCareerEvents(meetingId, meeting.getMemberId(), step3);
+        saveCareerEvents(meetingId, meeting, step3);
     }
 
     // ── 내부 헬퍼 ─────────────────────────────────────────────────────────────
@@ -509,28 +509,35 @@ public class AnalysisService {
     }
 
     @SuppressWarnings("unchecked")
-    private void saveCareerEvents(Long meetingId, Long memberId, Map<String, Object> step3) {
+    private void saveCareerEvents(Long meetingId, Meeting meeting, Map<String, Object> step3) {
         Object raw = step3.get("careerEvents");
         if (!(raw instanceof List<?> list)) return;
         for (Object item : list) {
             if (!(item instanceof Map<?, ?> e)) continue;
-            String typeStr = String.valueOf(e.get("eventType"));
-            String title = String.valueOf(e.get("title"));
-            if (title == null || title.isBlank()) continue;
+            Object titleObj = e.get("title");
+            if (titleObj == null) continue;
+            String title = titleObj.toString();
+            if (title.isBlank()) continue;
+
+            Object typeObj = e.get("eventType");
             CareerEventType eventType;
             try {
-                eventType = CareerEventType.valueOf(typeStr);
+                eventType = typeObj != null
+                        ? CareerEventType.valueOf(typeObj.toString())
+                        : CareerEventType.ACHIEVEMENT;
             } catch (IllegalArgumentException ex) {
                 eventType = CareerEventType.ACHIEVEMENT;
             }
+
+            Object descObj = e.get("description");
             careerEventRepository.save(CareerEvent.builder()
-                    .userId(memberId)
+                    .userId(meeting.getMemberId())
                     .meetingId(meetingId)
                     .eventType(eventType)
                     .title(title)
-                    .description(e.get("description") != null ? String.valueOf(e.get("description")) : null)
+                    .description(descObj != null ? descObj.toString() : null)
                     .evidence(e.get("evidence") instanceof Map<?, ?> ev ? (Map<String, Object>) ev : null)
-                    .occurredAt(java.time.LocalDateTime.now())
+                    .occurredAt(meeting.getScheduledAt())
                     .build());
         }
     }
