@@ -84,8 +84,8 @@ public class AnalysisService {
               제외: 지시에 대한 단순 수락
 
             [발화 비율]
-            전체 발화 분량(문자수 또는 시간) 기준으로 리더/멤버 발화 비율을 추정하세요.
-            recommendedLeaderRatio는 항상 40입니다.
+            전체 발화 분량(문자수 기준) 기준으로 리더와 멤버 각자의 실제 발화 비율을 추정하세요.
+            leaderRatio + memberRatio = 100이 되어야 합니다.
 
             [기타 추출]
             - topics: 주요 논의 주제 (최대 5개)
