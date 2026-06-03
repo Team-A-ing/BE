@@ -67,30 +67,75 @@ public class AnalysisService {
     // ── 프롬프트 ──────────────────────────────────────────────────────────────
 
     private static final String STEP2_SYSTEM = """
-            당신은 1on1 미팅 전사 텍스트 구조화 전문가입니다.
-            Whisper verbose_json 형식의 전사 텍스트를 분석해 다음을 추출하세요.
+            당신은 1on1 미팅 전사 텍스트에서 Speech Act를 추출하는 전문가입니다.
 
-            [화자 추론]
+            [이론적 배경]
+            본 분석은 Searle(1969)의 Speech Act Theory와 Edmondson(1999)의
+            심리적 안전감(Psychological Safety) 프레임워크에 기반합니다.
+            Edmondson에 따르면 팀의 심리적 안전감은 구성원의 '대인 관계 위험을
+            감수하는 행동(interpersonal risk-taking behavior)'으로 측정됩니다.
+            우리는 이를 3가지 Speech Act 유형으로 조작적 정의합니다.
+
+            [분석 절차 — 반드시 이 순서대로 추론하세요]
+
+            Step A. 화자 판별
             대화 맥락을 보고 각 발화자를 추론하세요.
-            - 리더: 질문하고 방향을 제시하는 역할
-            - 멤버: 업무 현황을 보고하고 답변하는 역할
+            - 리더: 질문하고, 방향을 제시하고, 피드백을 주는 역할
+            - 멤버: 업무 현황을 보고하고, 답변하고, 의견을 제시하는 역할
+            판별 근거: 존댓말 방향, 보고 vs 질문 패턴, 의사결정 권한 표현
 
-            [Speech Act 분류 — 멤버 발화만, 애매하면 포함하지 마세요]
-            - vulnerability: 취약성 표현 ("잘 모르겠습니다", "실수했습니다", "도움이 필요합니다")
-              제외: 사교적 겸손, 관용표현
-            - constructiveDissent: 건설적 반대 ("다른 의견인데요", "그 방법보다는...")
-              제외: 단순 불만, 인신공격
-            - initiative: 자발적 제안 ("제가 해볼게요", "이런 아이디어가 있는데")
-              제외: 지시에 대한 단순 수락
+            Step B. 멤버 발화만 필터링
+            리더 발화는 Speech Act 분류 대상에서 제외합니다.
 
-            [발화 비율]
-            전체 발화 분량(문자수)을 기준으로 리더와 멤버 각자의 실제 발화 비율을 추정하세요.
-            leaderRatio와 memberRatio는 반드시 소수점 없는 정수(Integer)로 반환하고, 합이 정확히 100이 되어야 합니다.
+            Step C. 각 멤버 발화의 화행(illocutionary act) 의도 판단
 
-            [기타 추출]
+            1. vulnerability (Expressive Act — 자기 상태/감정 표현)
+               정의: 자신의 무지, 실수, 약점, 불안을 솔직하게 드러내는 행위
+               포함: "잘 모르겠습니다", "실수했습니다", "도움이 필요합니다", "솔직히 불안합니다"
+               제외: 사교적 겸손("아이고 별거 아닙니다"), 관용표현("죄송하지만 화면 공유 좀")
+
+            2. constructiveDissent (Assertive Act — 사실/믿음에 대한 주장)
+               정의: 리더나 기존 방향에 대해 근거를 들어 다른 의견을 제시하는 행위
+               포함: "다른 의견인데요", "그 방법보다는 이게 낫다고 봐요"
+               제외: 단순 불만("이건 왜 이래요"), 인신공격, 감정적 반발
+
+            3. initiative (Commissive Act — 미래 행동에 대한 자발적 제안)
+               정의: 지시 없이 자발적으로 새로운 행동이나 아이디어를 제안하는 행위
+               포함: "제가 해볼게요", "이런 아이디어가 있는데", "제가 먼저 만들어보겠습니다"
+               제외: 지시에 대한 단순 수락("네 알겠습니다"), 이미 합의된 작업 재확인
+
+            분류 원칙: 애매하면 포함하지 마세요 (precision > recall). 원문 그대로 인용하세요.
+
+            Step D. 발화 비율 추정
+            전체 발화 분량(문자수)을 기준으로 리더/멤버 비율을 추정하세요.
+            leaderRatio와 memberRatio는 반드시 소수점 없는 정수로 반환하고, 합이 정확히 100이 되어야 합니다.
+
+            Step E. 주제, 블로커, 약속 추출
             - topics: 주요 논의 주제 (최대 5개)
             - blockerKeywords: 업무 장애 요소 키워드 (최대 5개)
             - promises: 이행 의지가 담긴 발언 ("하겠습니다", "해드릴게요" 등)
+
+            [Few-shot 예시]
+
+            예시 1 — vulnerability:
+            발화: "사실 이번 스프린트에서 제가 맡은 부분이 잘 안 돼서 좀 막막합니다"
+            분류: vulnerability / 근거: 자신의 어려움과 감정을 솔직히 드러내는 expressive act
+
+            예시 2 — constructiveDissent:
+            발화: "그 방식도 좋은데, 저는 API를 먼저 정리하고 가는 게 순서에 맞다고 봐요"
+            분류: constructiveDissent / 근거: 대안적 관점을 근거와 함께 제시하는 assertive act
+
+            예시 3 — initiative:
+            발화: "제가 이번 주 안에 테스트 자동화 스크립트를 만들어보겠습니다"
+            분류: initiative / 근거: 지시 없이 자발적으로 미래 행동을 약속하는 commissive act
+
+            예시 4 — 제외 (사교적 겸손):
+            발화: "아 죄송합니다, 마이크가 안 켜져 있었네요"
+            분류: 해당 없음 / 근거: 상황적 사과로 자기 약점 표현이 아닌 관용표현
+
+            예시 5 — 제외 (단순 수락):
+            발화: "네 알겠습니다, 그렇게 하겠습니다"
+            분류: 해당 없음 / 근거: 리더 지시에 대한 수락으로 자발적 제안이 아님
 
             반드시 아래 JSON 형식으로만 응답하세요:
             {
@@ -109,20 +154,34 @@ public class AnalysisService {
     private static final String STEP3_SYSTEM = """
             당신은 1on1 미팅 분석 전문가입니다. 제공된 데이터를 바탕으로 스코어링과 코칭 피드백을 생성하세요.
 
+            [이론적 배경]
+            - Safety Score: Edmondson(1999)의 심리적 안전감을 Speech Act 빈도로 조작적 측정.
+              자기보고 설문은 사회적 바람직성 편향(Social Desirability Bias)으로
+              실제 행동 대비 과대보고되는 경향이 있음 (Podsakoff et al., 2003).
+              따라서 행동 데이터(Speech Act)를 병행 측정하여 편향을 보정함.
+            - Honesty Gap: 자기보고(surveyScore)와 행동 측정(safetyScore)의 괴리를 정량화.
+              양수(OVERREPORT)는 자기보고가 행동보다 높은 상태 → 잠재적 위험 신호.
+
             [Safety Score 산출]
             멤버의 Speech Act 횟수를 30분 기준으로 정규화 후 점수화.
             adjusted_count = round(raw_count × 30 ÷ actual_duration_minutes)
             미팅 시간 정보가 없으면 raw_count를 그대로 사용.
 
-            변환표:
+            변환표 (체감 효과 감소 곡선 — 첫 발화의 심리적 의미가 가장 크므로):
             - Vulnerability (max 40): 0회→0, 1회→20, 2회→32, 3회→38, 4회+→40
             - constructiveDissent (max 35): 0회→0, 1회→18, 2회→28, 3회→33, 4회+→35
             - Initiative (max 25): 0회→0, 1회→13, 2회→20, 3회→24, 4회+→25
             safetyScore = V_score + D_score + I_score
 
-            [Honesty Gap]
+            가중치 근거: Vulnerability(40%) > Dissent(35%) > Initiative(25%) — 대인 위험 감수 수준 순
+
+            [Honesty Gap — 방향성 분석]
             surveyScore가 제공된 경우: honestyGap = surveyScore - safetyScore (부호 있는 값)
             surveyScore가 없으면: null
+            - gap > 0 → OVERREPORT (자기보고 > 행동 → 사회적 바람직성 편향 가능성)
+            - gap ≤ 0 → UNDERREPORT (자기보고 ≤ 행동 → 겸손/보수적 → 안전)
+
+            위험도 (OVERREPORT일 때만): 1~20→SAFE, 21~40→CAUTION, 41~60→WARNING, 61+→DANGER
 
             [Alignment Gap (0–100)]
             서베이 topics vs 실제 미팅 topics 일치도를 추정하고, 한 문장으로 구체적인 이유를 작성하세요.
@@ -133,7 +192,7 @@ public class AnalysisService {
             이전 약속 없으면: null
             완료→100, 진행중→70, 미이행+사유→50, 미이행+무사유→20, 전혀 언급없음→0
 
-            [코칭 피드백 — 반드시 준수]
+            [코칭 피드백 — Fact-Based Output 원칙]
             절대 금지: AI 해석 라벨 ("수동 공격적", "번아웃 징후", "소극적 참여" 등)
             허용: 관찰 가능한 사실만 (원문 인용 + 타임스탬프, 횟수, 수치)
             severity: ERROR / WARNING / SUCCESS / INFO
@@ -143,6 +202,10 @@ public class AnalysisService {
               - dataSummary: 수치/사실 근거
               - actionGuide: 리더가 다음에 취할 행동
             - nextActionPlans: 이번 미팅 결과로 리더가 해야 할 구체적 실행 과제 (최대 4개)
+
+            이전 미팅 컨텍스트가 제공된 경우, 피드백에 변화량을 반드시 포함하세요.
+            예: "Vulnerability 발화가 이전 3회 평균 2.3건에서 0건으로 감소했습니다"
+            Safety Score가 baseline 대비 30%+ 하락하면 반드시 WARNING으로 언급하세요.
 
             반드시 아래 JSON 형식으로만 응답하세요:
             {
@@ -211,23 +274,21 @@ public class AnalysisService {
     // ── 파이프라인 ────────────────────────────────────────────────────────────
 
     public void analyze(Long meetingId, String transcript) {
-        // DB 조회는 짧은 별도 트랜잭션으로
         Meeting meeting = loadMeeting(meetingId);
         Double surveyScore = loadSurveyScore(meetingId, meeting.getMemberId());
         Integer durationSec = loadDurationSec(meetingId);
         List<Promise> prevPromises = loadPrevPromises(meeting, meetingId);
+        MeetingContext context = loadMeetingContext(meeting, meetingId);
 
-        // LLM 호출 — 트랜잭션 밖 (seconds 단위 네트워크 I/O)
         String step2Raw = gptAdapter.chat(STEP2_SYSTEM, transcript);
         Map<String, Object> step2 = parseJson(step2Raw);
         log.info("Step2(GPT-mini) 완료. meetingId={}", meetingId);
 
-        String step3UserPrompt = buildStep3UserPrompt(step2, surveyScore, durationSec, prevPromises);
+        String step3UserPrompt = buildStep3UserPrompt(step2, surveyScore, durationSec, prevPromises, context);
         String step3Raw = gptAdapter.chat(STEP3_SYSTEM, step3UserPrompt);
         Map<String, Object> step3 = parseJson(step3Raw);
         log.info("Step3(GPT-mini) 완료. meetingId={}", meetingId);
 
-        // DB 저장만 트랜잭션
         persistResults(meetingId, meeting, step2, step3);
     }
 
@@ -289,7 +350,8 @@ public class AnalysisService {
     }
 
     private String buildStep3UserPrompt(Map<String, Object> step2, Double surveyScore,
-                                        Integer durationSec, List<Promise> prevPromises) {
+                                        Integer durationSec, List<Promise> prevPromises,
+                                        MeetingContext context) {
         StringBuilder sb = new StringBuilder("[분석 데이터]\n");
         if (durationSec != null) {
             sb.append("미팅 시간: ").append(durationSec / 60).append("분\n\n");
@@ -307,8 +369,71 @@ public class AnalysisService {
         if (!prevPromises.isEmpty()) {
             sb.append("[이전 약속 목록]\n");
             prevPromises.forEach(p -> sb.append("- ").append(p.getContent()).append("\n"));
+            sb.append("\n");
+        }
+        if (!context.isEmpty()) {
+            sb.append("[이전 미팅 컨텍스트 — Rolling Baseline]\n");
+            sb.append("최근 ").append(context.meetingCount()).append("회 미팅 평균:\n");
+            sb.append("- Safety Score 평균: ").append(String.format("%.1f", context.avgSafetyScore())).append("\n");
+            sb.append("- Vulnerability 평균: ").append(String.format("%.1f", context.avgVulnerability())).append("회\n");
+            sb.append("- Constructive Dissent 평균: ").append(String.format("%.1f", context.avgDissent())).append("회\n");
+            sb.append("- Initiative 평균: ").append(String.format("%.1f", context.avgInitiative())).append("회\n");
+            if (!context.prevBlockers().isEmpty()) {
+                sb.append("- 이전 블로커: ").append(String.join(", ", context.prevBlockers())).append("\n");
+            }
+            sb.append("\n이전 데이터와 비교하여 유의미한 변화가 있으면 피드백에 반영하세요.\n");
         }
         return sb.toString();
+    }
+
+    @Transactional(readOnly = true)
+    protected MeetingContext loadMeetingContext(Meeting meeting, Long meetingId) {
+        List<Meeting> prevMeetings = meetingRepository.findByLeaderIdAndMemberIdAndIdLessThan(
+                meeting.getLeaderId(), meeting.getMemberId(), meetingId);
+        if (prevMeetings.isEmpty()) return MeetingContext.empty();
+
+        List<Long> recentIds = prevMeetings.stream()
+                .sorted((a, b) -> b.getId().compareTo(a.getId()))
+                .limit(3)
+                .map(Meeting::getId)
+                .toList();
+
+        List<Analysis> prevAnalyses = analysisRepository.findByMeetingIdIn(recentIds);
+        if (prevAnalyses.isEmpty()) return MeetingContext.empty();
+
+        double avgSafety = prevAnalyses.stream()
+                .map(Analysis::getSafetyScore).filter(Objects::nonNull)
+                .mapToDouble(Double::doubleValue).average().orElse(0);
+
+        double sumV = 0, sumD = 0, sumI = 0;
+        for (Analysis a : prevAnalyses) {
+            Map<String, Object> acts = a.getSpeechActs();
+            if (acts == null) continue;
+            sumV += listSize(acts.get("vulnerability"));
+            sumD += listSize(acts.get("constructiveDissent"));
+            sumI += listSize(acts.get("initiative"));
+        }
+        int n = prevAnalyses.size();
+
+        List<String> prevBlockers = prevAnalyses.stream()
+                .map(Analysis::getBlockerKeywords).filter(Objects::nonNull)
+                .flatMap(List::stream).distinct().toList();
+
+        return new MeetingContext(n, avgSafety, sumV / n, sumD / n, sumI / n, prevBlockers);
+    }
+
+    private int listSize(Object obj) {
+        return (obj instanceof List<?> list) ? list.size() : 0;
+    }
+
+    record MeetingContext(
+            int meetingCount, double avgSafetyScore,
+            double avgVulnerability, double avgDissent, double avgInitiative,
+            List<String> prevBlockers) {
+        static MeetingContext empty() {
+            return new MeetingContext(0, 0, 0, 0, 0, List.of());
+        }
+        boolean isEmpty() { return meetingCount == 0; }
     }
 
     @SuppressWarnings("unchecked")
