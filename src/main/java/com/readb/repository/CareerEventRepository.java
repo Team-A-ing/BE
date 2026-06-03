@@ -3,6 +3,7 @@ package com.readb.repository;
 import com.readb.domain.career.CareerEvent;
 import com.readb.domain.career.CareerEventType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -29,6 +30,10 @@ public interface CareerEventRepository extends JpaRepository<CareerEvent, Long> 
     }
 
     List<CareerEvent> findByMeetingId(Long meetingId);
+
+    @Modifying
+    @Query("DELETE FROM CareerEvent e WHERE e.meetingId = :meetingId")
+    void deleteByMeetingId(@Param("meetingId") Long meetingId);
 
     List<CareerEvent> findByMeetingIdAndEventTypeIn(Long meetingId, List<CareerEventType> types);
 }

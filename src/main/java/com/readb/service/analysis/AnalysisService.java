@@ -113,7 +113,10 @@ public class AnalysisService {
             Step E. 주제, 블로커, 약속 추출
             - topics: 주요 논의 주제 (최대 5개)
             - blockerKeywords: 업무 장애 요소 키워드 (최대 5개)
-            - promises: 이행 의지가 담긴 발언 ("하겠습니다", "해드릴게요" 등)
+            - promises: "~하겠습니다", "~해드리겠습니다" 등 명확한 이행 의지가 담긴 발언에서 추출.
+              content는 원문 그대로가 아니라 "무엇을 하겠다"는 약속 내용을 한 문장으로 요약하세요.
+              예: "다음 주까지 AWS 접근 권한을 부여하겠습니다" → content: "AWS 접근 권한 부여"
+              owner는 약속한 사람 (leader 또는 member)
 
             [Few-shot 예시]
 
@@ -225,8 +228,24 @@ public class AnalysisService {
               ],
               "nextActionPlans": [{"content": "..."}],
               "memberFeedback": {"summary": "..."},
-              "careerTags": ["태그1"]
+              "careerTags": ["태그1"],
+              "careerEvents": [
+                {
+                  "eventType": "ACHIEVEMENT",
+                  "title": "한 줄 성과 제목",
+                  "description": "구체적 내용 (수치 포함)",
+                  "evidence": {"quote": "원문 인용", "timestamp": "MM:SS"}
+                }
+              ]
             }
+
+            [careerEvents 추출 기준]
+            멤버 발화에서 다음 유형의 성과/기여를 발견하면 추출하세요:
+            - ACHIEVEMENT: 완료된 목표, 성과 (수치가 있으면 반드시 포함)
+            - PROPOSAL_ADOPTED: 제안이 팀/리더에게 채택된 경우
+            - GROWTH: 새로운 기술 습득, 역량 성장 시그널
+            - CONTRIBUTION: 팀원 도움, 협업 기여
+            없으면 빈 배열 []로 반환하세요.
             """;
 
     // ── 의존성 ────────────────────────────────────────────────────────────────
@@ -333,6 +352,9 @@ public class AnalysisService {
 
         actionPlanRepository.deleteByMeetingId(meetingId);
         saveActionPlans(meetingId, meeting.getLeaderId(), step3);
+
+        careerEventRepository.deleteByMeetingId(meetingId);
+        saveCareerEvents(meetingId, meeting, step3);
     }
 
     // ── 내부 헬퍼 ─────────────────────────────────────────────────────────────
@@ -482,6 +504,40 @@ public class AnalysisService {
                     .meetingId(meetingId)
                     .leaderId(leaderId)
                     .content(content)
+                    .build());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void saveCareerEvents(Long meetingId, Meeting meeting, Map<String, Object> step3) {
+        Object raw = step3.get("careerEvents");
+        if (!(raw instanceof List<?> list)) return;
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> e)) continue;
+            Object titleObj = e.get("title");
+            if (titleObj == null) continue;
+            String title = titleObj.toString();
+            if (title.isBlank()) continue;
+
+            Object typeObj = e.get("eventType");
+            CareerEventType eventType;
+            try {
+                eventType = typeObj != null
+                        ? CareerEventType.valueOf(typeObj.toString())
+                        : CareerEventType.ACHIEVEMENT;
+            } catch (IllegalArgumentException ex) {
+                eventType = CareerEventType.ACHIEVEMENT;
+            }
+
+            Object descObj = e.get("description");
+            careerEventRepository.save(CareerEvent.builder()
+                    .userId(meeting.getMemberId())
+                    .meetingId(meetingId)
+                    .eventType(eventType)
+                    .title(title)
+                    .description(descObj != null ? descObj.toString() : null)
+                    .evidence(e.get("evidence") instanceof Map<?, ?> ev ? (Map<String, Object>) ev : null)
+                    .occurredAt(meeting.getScheduledAt())
                     .build());
         }
     }
