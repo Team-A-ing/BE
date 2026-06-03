@@ -3,6 +3,7 @@ package com.readb.controller;
 import com.readb.common.response.ApiResponse;
 import com.readb.dto.analysis.BlockerPyramidResponse;
 import com.readb.dto.analysis.RadarDataPoint;
+import com.readb.dto.analysis.TalkRatioRankingItem;
 import com.readb.dto.team.TeamCreateRequest;
 import com.readb.dto.team.TeamCreateResponse;
 import com.readb.dto.team.TeamDashboardResponse;
@@ -63,5 +64,10 @@ public class TeamController {
     @GetMapping("/{teamId}/blocker-pyramid")
     public ApiResponse<BlockerPyramidResponse> getBlockerPyramid(@PathVariable Long teamId) {
         return ApiResponse.ok(analysisService.getBlockerData(teamId));
+    }
+
+    @GetMapping("/{teamId}/talk-ratio-ranking")
+    public ApiResponse<List<TalkRatioRankingItem>> getTalkRatioRanking(@PathVariable Long teamId) {
+        return ApiResponse.ok(analysisService.getTalkRatioRanking(teamId));
     }
 }

@@ -14,6 +14,7 @@ import com.readb.dto.analysis.AnalysisResultResponse;
 import com.readb.dto.analysis.AnalysisResultResponse.*;
 import com.readb.dto.analysis.BlockerKeyword;
 import com.readb.dto.analysis.BlockerPyramidResponse;
+import com.readb.dto.analysis.TalkRatioRankingItem;
 import com.readb.dto.analysis.CareerMemoryResponse;
 import com.readb.dto.analysis.HonestyDirection;
 import com.readb.dto.analysis.PortfolioResponse;
@@ -690,6 +691,62 @@ public class AnalysisService {
             result.add(new RadarDataPoint(memberId, member.getName(), surveyScore, safetyScore, honestyGap,
                     computeDirection(honestyGap), computeRiskLevel(honestyGap)));
         }
+        return result;
+    }
+
+    @Transactional(readOnly = true)
+    public List<TalkRatioRankingItem> getTalkRatioRanking(Long teamId) {
+        List<User> members = userRepository.findByTeamId(teamId);
+        if (members.isEmpty()) return List.of();
+
+        List<Long> memberIds = members.stream().map(User::getId).toList();
+
+        // 멤버별 최신 meetingId 추출
+        Map<Long, Long> latestMeetingIdByMember = new LinkedHashMap<>();
+        meetingRepository.findByMemberIdInOrderByCreatedAtDesc(memberIds)
+                .forEach(m -> latestMeetingIdByMember.putIfAbsent(m.getMemberId(), m.getId()));
+
+        List<Long> latestMeetingIds = new ArrayList<>(latestMeetingIdByMember.values());
+        if (latestMeetingIds.isEmpty()) return List.of();
+
+        // bulk 조회
+        Map<Long, Analysis> analysisByMeetingId = analysisRepository.findByMeetingIdIn(latestMeetingIds)
+                .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
+
+        Map<Long, User> userById = members.stream().collect(Collectors.toMap(User::getId, u -> u));
+        List<TalkRatioRankingItem> result = new ArrayList<>();
+
+        for (Map.Entry<Long, Long> entry : latestMeetingIdByMember.entrySet()) {
+            Long memberId = entry.getKey();
+            Long meetingId = entry.getValue();
+            Analysis analysis = analysisByMeetingId.get(meetingId);
+            if (analysis == null) continue;
+
+            Map<String, Object> talkRatioData = analysis.getTalkRatio();
+            if (talkRatioData == null) continue;
+
+            Object leaderRatioObj = talkRatioData.get("leaderRatio");
+            Object memberRatioObj = talkRatioData.get("memberRatio");
+            if (leaderRatioObj == null || memberRatioObj == null) continue;
+
+            int leaderRatio = ((Number) leaderRatioObj).intValue();
+            int memberRatio = ((Number) memberRatioObj).intValue();
+
+            String status;
+            if (leaderRatio >= 70) {
+                status = "위험";
+            } else if (leaderRatio >= 50) {
+                status = "관찰";
+            } else {
+                status = "적정";
+            }
+
+            User member = userById.get(memberId);
+            result.add(new TalkRatioRankingItem(memberId, member.getName(), leaderRatio, memberRatio, status));
+        }
+
+        // leaderRatio 내림차순 정렬 (높을수록 위험)
+        result.sort((a, b) -> Integer.compare(b.leaderRatio(), a.leaderRatio()));
         return result;
     }
 
