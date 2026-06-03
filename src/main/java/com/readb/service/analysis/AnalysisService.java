@@ -84,8 +84,8 @@ public class AnalysisService {
               제외: 지시에 대한 단순 수락
 
             [발화 비율]
-            전체 발화 분량(문자수 기준) 기준으로 리더와 멤버 각자의 실제 발화 비율을 추정하세요.
-            leaderRatio + memberRatio = 100이 되어야 합니다.
+            전체 발화 분량(문자수)을 기준으로 리더와 멤버 각자의 실제 발화 비율을 추정하세요.
+            leaderRatio와 memberRatio는 반드시 소수점 없는 정수(Integer)로 반환하고, 합이 정확히 100이 되어야 합니다.
 
             [기타 추출]
             - topics: 주요 논의 주제 (최대 5개)
