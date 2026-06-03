@@ -243,6 +243,7 @@ public class AnalysisService {
     private final LlmAdapter gptAdapter;
     private final LlmAdapter claudeAdapter;
     private final ObjectMapper objectMapper;
+    private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     public AnalysisService(
             AnalysisRepository analysisRepository,
@@ -256,7 +257,8 @@ public class AnalysisService {
             ActionPlanRepository actionPlanRepository,
             @Qualifier("gptMiniAdapter") LlmAdapter gptAdapter,
             @Qualifier("claudeAdapter") LlmAdapter claudeAdapter,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.analysisRepository = analysisRepository;
         this.meetingRepository = meetingRepository;
         this.surveyRepository = surveyRepository;
@@ -269,6 +271,7 @@ public class AnalysisService {
         this.gptAdapter = gptAdapter;
         this.claudeAdapter = claudeAdapter;
         this.objectMapper = objectMapper;
+        this.transactionTemplate = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
     }
 
     // ── 파이프라인 ────────────────────────────────────────────────────────────
@@ -289,7 +292,7 @@ public class AnalysisService {
         Map<String, Object> step3 = parseJson(step3Raw);
         log.info("Step3(GPT-mini) 완료. meetingId={}", meetingId);
 
-        persistResults(meetingId, meeting, step2, step3);
+        transactionTemplate.executeWithoutResult(tx -> persistResults(meetingId, meeting, step2, step3));
     }
 
     @Transactional(readOnly = true)
@@ -321,7 +324,6 @@ public class AnalysisService {
                 : promiseRepository.findByMeetingIdIn(prevMeetings.stream().map(Meeting::getId).toList());
     }
 
-    @Transactional
     protected void persistResults(Long meetingId, Meeting meeting, Map<String, Object> step2, Map<String, Object> step3) {
         analysisRepository.findByMeetingId(meetingId).ifPresent(analysisRepository::delete);
         analysisRepository.save(buildAnalysis(meetingId, step2, step3));
@@ -374,10 +376,10 @@ public class AnalysisService {
         if (!context.isEmpty()) {
             sb.append("[이전 미팅 컨텍스트 — Rolling Baseline]\n");
             sb.append("최근 ").append(context.meetingCount()).append("회 미팅 평균:\n");
-            sb.append("- Safety Score 평균: ").append(String.format("%.1f", context.avgSafetyScore())).append("\n");
-            sb.append("- Vulnerability 평균: ").append(String.format("%.1f", context.avgVulnerability())).append("회\n");
-            sb.append("- Constructive Dissent 평균: ").append(String.format("%.1f", context.avgDissent())).append("회\n");
-            sb.append("- Initiative 평균: ").append(String.format("%.1f", context.avgInitiative())).append("회\n");
+            sb.append("- Safety Score 평균: ").append(String.format(java.util.Locale.US, "%.1f", context.avgSafetyScore())).append("\n");
+            sb.append("- Vulnerability 평균: ").append(String.format(java.util.Locale.US, "%.1f", context.avgVulnerability())).append("회\n");
+            sb.append("- Constructive Dissent 평균: ").append(String.format(java.util.Locale.US, "%.1f", context.avgDissent())).append("회\n");
+            sb.append("- Initiative 평균: ").append(String.format(java.util.Locale.US, "%.1f", context.avgInitiative())).append("회\n");
             if (!context.prevBlockers().isEmpty()) {
                 sb.append("- 이전 블로커: ").append(String.join(", ", context.prevBlockers())).append("\n");
             }
@@ -388,15 +390,10 @@ public class AnalysisService {
 
     @Transactional(readOnly = true)
     protected MeetingContext loadMeetingContext(Meeting meeting, Long meetingId) {
-        List<Meeting> prevMeetings = meetingRepository.findByLeaderIdAndMemberIdAndIdLessThan(
-                meeting.getLeaderId(), meeting.getMemberId(), meetingId);
-        if (prevMeetings.isEmpty()) return MeetingContext.empty();
-
-        List<Long> recentIds = prevMeetings.stream()
-                .sorted((a, b) -> b.getId().compareTo(a.getId()))
-                .limit(3)
-                .map(Meeting::getId)
-                .toList();
+        List<Long> recentIds = meetingRepository.findTop3ByLeaderIdAndMemberIdAndIdLessThanOrderByIdDesc(
+                meeting.getLeaderId(), meeting.getMemberId(), meetingId)
+                .stream().map(Meeting::getId).toList();
+        if (recentIds.isEmpty()) return MeetingContext.empty();
 
         List<Analysis> prevAnalyses = analysisRepository.findByMeetingIdIn(recentIds);
         if (prevAnalyses.isEmpty()) return MeetingContext.empty();
@@ -417,7 +414,7 @@ public class AnalysisService {
 
         List<String> prevBlockers = prevAnalyses.stream()
                 .map(Analysis::getBlockerKeywords).filter(Objects::nonNull)
-                .flatMap(List::stream).distinct().toList();
+                .flatMap(List::stream).filter(Objects::nonNull).distinct().toList();
 
         return new MeetingContext(n, avgSafety, sumV / n, sumD / n, sumI / n, prevBlockers);
     }
