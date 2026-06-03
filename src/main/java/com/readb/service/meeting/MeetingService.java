@@ -180,8 +180,7 @@ public class MeetingService {
                 .map(Recording::getDurationSec)
                 .orElse(null);
 
-        List<CareerEvent> events = careerEventRepository.findByMeetingIdAndEventTypeIn(
-                meetingId, List.of(CareerEventType.ACHIEVEMENT, CareerEventType.PROPOSAL_ADOPTED));
+        List<CareerEvent> events = careerEventRepository.findByMeetingId(meetingId);
 
         List<Promise> promises = promiseRepository.findByMeetingIdAndOwnerId(meetingId, meeting.getLeaderId());
 
