@@ -3,6 +3,7 @@ package com.readb.controller;
 import com.readb.common.response.ApiResponse;
 import com.readb.dto.analysis.AnalysisResultResponse;
 import com.readb.dto.meeting.MeetingCreateRequest;
+import com.readb.dto.meeting.PreBriefingResponse;
 import com.readb.dto.meeting.MeetingCreateResponse;
 import com.readb.dto.meeting.MeetingDetailResponse;
 import com.readb.dto.meeting.MeetingListResponse;
@@ -65,6 +66,11 @@ public class MeetingController {
     @GetMapping("/{meetingId}/status")
     public ApiResponse<MeetingStatusResponse> getStatus(@PathVariable Long meetingId) {
         return ApiResponse.ok(meetingService.getStatus(meetingId));
+    }
+
+    @GetMapping("/{meetingId}/pre-briefing")
+    public ApiResponse<PreBriefingResponse> getPreBriefing(@PathVariable Long meetingId) {
+        return ApiResponse.ok(analysisService.getPreBriefing(meetingId));
     }
 
     @GetMapping("/{meetingId}/leader-report")
