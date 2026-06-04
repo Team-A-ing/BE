@@ -246,7 +246,8 @@ public class AnalysisService {
             멤버 발화에서 다음 유형의 성과/기여를 발견하면 추출하세요 (없으면 빈 배열 []):
             - ACHIEVEMENT: 완료된 목표, 결과물, 성과 (수치 있으면 반드시 포함)
               예) "배포 파이프라인 구축 완료해서 배포 시간 30분 → 5분으로 줄였어요"
-            - PROPOSAL_ADOPTED: 제안이 팀/리더에게 채택된 경우
+            - ACHIEVEMENT: 완료된 목표, 결과물, 제안 채택 포함 (수치 있으면 반드시 포함)
+              예) "배포 파이프라인 구축 완료해서 배포 시간 30분 → 5분으로 줄였어요"
               예) "제가 제안한 공통 컴포넌트 방식 팀에서 도입하기로 했어요"
             - GROWTH: 새로운 기술 습득, 역량 확장
               예) "이번에 처음으로 인프라 쪽 공부하면서 k8s 설정 직접 해봤어요"
@@ -1264,8 +1265,7 @@ public class AnalysisService {
         int achievementCount = (int) events.stream()
                 .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT).count();
         int leaderEndorsementCount = (int) events.stream()
-                .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT
-                        || e.getEventType() == CareerEventType.PROPOSAL_ADOPTED).count();
+                .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT).count();
 
         int contributionPercentile = computeContributionPercentile(memberId, member.getTeamId());
 
