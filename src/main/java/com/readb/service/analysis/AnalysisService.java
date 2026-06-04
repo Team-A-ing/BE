@@ -112,7 +112,10 @@ public class AnalysisService {
 
             Step E. 주제, 블로커, 약속 추출
             - topics: 주요 논의 주제 (최대 5개)
-            - blockerKeywords: 업무 장애 요소 키워드 (최대 5개)
+            - blockerKeywords: 업무 진행을 막는 구체적인 장애 요소 (최대 5개).
+              반드시 복합 표현으로 작성하세요 (예: "QA 리소스 부족", "코드 리뷰 병목", "API 스펙 불명확").
+              "지연", "문제", "어려움", "기타", "상황" 같은 단일 추상 단어는 절대 포함하지 마세요.
+              유사한 의미의 키워드는 하나로 통합하세요 (예: "시간", "효율", "시간 효율" → "시간 효율").
             - promises: "~하겠습니다", "~해드리겠습니다" 등 명확한 이행 의지가 담긴 발언에서 추출.
               content는 원문 그대로가 아니라 "무엇을 하겠다"는 약속 내용을 한 문장으로 요약하세요.
               예: "다음 주까지 AWS 접근 권한을 부여하겠습니다" → content: "AWS 접근 권한 부여"
@@ -240,12 +243,16 @@ public class AnalysisService {
             }
 
             [careerEvents 추출 기준]
-            멤버 발화에서 다음 유형의 성과/기여를 발견하면 추출하세요:
-            - ACHIEVEMENT: 완료된 목표, 성과 (수치가 있으면 반드시 포함)
+            멤버 발화에서 다음 유형의 성과/기여를 발견하면 추출하세요 (없으면 빈 배열 []):
+            - ACHIEVEMENT: 완료된 목표, 결과물, 성과 (수치 있으면 반드시 포함)
+              예) "배포 파이프라인 구축 완료해서 배포 시간 30분 → 5분으로 줄였어요"
             - PROPOSAL_ADOPTED: 제안이 팀/리더에게 채택된 경우
-            - GROWTH: 새로운 기술 습득, 역량 성장 시그널
-            - CONTRIBUTION: 팀원 도움, 협업 기여
-            없으면 빈 배열 []로 반환하세요.
+              예) "제가 제안한 공통 컴포넌트 방식 팀에서 도입하기로 했어요"
+            - GROWTH: 새로운 기술 습득, 역량 확장
+              예) "이번에 처음으로 인프라 쪽 공부하면서 k8s 설정 직접 해봤어요"
+            - CONTRIBUTION: 팀원 돕기, 협업 기여
+              예) "신입 온보딩 자료 만들어서 팀 전체 공유했어요"
+            title은 한 줄 요약, description은 구체적 내용, evidence.quote는 원문 인용.
             """;
 
     // ── 의존성 ────────────────────────────────────────────────────────────────
@@ -459,7 +466,7 @@ public class AnalysisService {
     private Analysis buildAnalysis(Long meetingId, Map<String, Object> step2, Map<String, Object> step3) {
         return Analysis.builder()
                 .meetingId(meetingId)
-                .safetyScore(toDouble(step3.get("safetyScore")))
+                .safetyScore(clamp(toDouble(step3.get("safetyScore")), 0.0, 100.0))
                 .alignmentGap(toDouble(step3.get("alignmentGap")))
                 .alignmentGapDetail((String) step3.get("alignmentGapDetail"))
                 .honestyGap(toDouble(step3.get("honestyGap")))
@@ -537,7 +544,8 @@ public class AnalysisService {
                     .title(title)
                     .description(descObj != null ? descObj.toString() : null)
                     .evidence(e.get("evidence") instanceof Map<?, ?> ev ? (Map<String, Object>) ev : null)
-                    .occurredAt(meeting.getScheduledAt())
+                    .occurredAt(meeting.getScheduledAt() != null
+                            ? meeting.getScheduledAt() : meeting.getCreatedAt())
                     .build());
         }
     }
@@ -566,6 +574,11 @@ public class AnalysisService {
         if (val == null) return null;
         if (val instanceof Number n) return n.doubleValue();
         return null;
+    }
+
+    private Double clamp(Double val, double min, double max) {
+        if (val == null) return null;
+        return Math.max(min, Math.min(max, val));
     }
 
     private static HonestyDirection computeDirection(Double honestyGap) {
