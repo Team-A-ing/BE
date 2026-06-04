@@ -576,7 +576,7 @@ public class AnalysisService {
         return null;
     }
 
-    private Double clamp(Double val, double min, double max) {
+    private static Double clamp(Double val, double min, double max) {
         if (val == null) return null;
         return Math.max(min, Math.min(max, val));
     }
