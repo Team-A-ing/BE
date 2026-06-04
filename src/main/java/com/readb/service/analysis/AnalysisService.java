@@ -550,24 +550,18 @@ public class AnalysisService {
         }
     }
 
+    // VDI 기반 surveyScore: safetyScore와 동일 차원(0~100)으로 산출
+    // V(1~5)→max 40, D(1~5)→max 35, I(1~5)→max 25
     private Double computeSurveyScore(Map<String, Object> scores) {
         if (scores == null) return null;
-        Object energyObj = scores.get("energyLevel");
-        if (energyObj == null) return null;
-        double base = ((Number) energyObj).doubleValue() * 20.0;
-        double adj = 0;
-        Object issuesObj = scores.get("issues");
-        if (issuesObj instanceof List<?> issues) {
-            for (Object issue : issues) {
-                adj += switch (issue.toString()) {
-                    case "업무 블로커" -> -10;
-                    case "리소스 요청" -> -5;
-                    case "팀 분위기", "프로세스 개선" -> -3;
-                    default -> 0;
-                };
-            }
-        }
-        return Math.max(0, Math.min(100, base + adj));
+        Object vObj = scores.get("vulnerabilityLevel");
+        Object dObj = scores.get("dissentLevel");
+        Object iObj = scores.get("initiativeLevel");
+        if (vObj == null || dObj == null || iObj == null) return null;
+        double v = ((Number) vObj).doubleValue() * 8.0;   // max 40
+        double d = ((Number) dObj).doubleValue() * 7.0;   // max 35
+        double i = ((Number) iObj).doubleValue() * 5.0;   // max 25
+        return Math.max(0, Math.min(100, v + d + i));
     }
 
     private Double toDouble(Object val) {
@@ -579,6 +573,17 @@ public class AnalysisService {
     private static Double clamp(Double val, double min, double max) {
         if (val == null) return null;
         return Math.max(min, Math.min(max, val));
+    }
+
+    private static String computeFlightRiskLabel(Double safetyScore, HonestyDirection direction, RiskLevel riskLevel) {
+        if (safetyScore == null) return null;
+        if (direction == HonestyDirection.OVERREPORT) {
+            if (riskLevel == RiskLevel.DANGER)  return "이탈 위험 높음";
+            if (riskLevel == RiskLevel.WARNING) return "이탈 위험 주의";
+        }
+        if (safetyScore < 30) return "관찰 필요";
+        if (safetyScore < 60) return "안정";
+        return "적극적 참여";
     }
 
     private static HonestyDirection computeDirection(Double honestyGap) {
@@ -638,8 +643,12 @@ public class AnalysisService {
         // promises
         PromisesResponse promises = buildPromises(meeting, meetingId);
 
+        HonestyDirection dir = gaps.honestyGap() != null ? computeDirection(gaps.honestyGap().gap()) : null;
+        RiskLevel risk = gaps.honestyGap() != null ? computeRiskLevel(gaps.honestyGap().gap()) : null;
+        String flightRiskLabel = computeFlightRiskLabel(a.getSafetyScore(), dir, risk);
+
         return new AnalysisResultResponse(meetingId, round, member.getName(), member.getJobTitle(),
-                meetingDate, durationSec, gaps, a.getSafetyScore(), speechActs,
+                meetingDate, durationSec, gaps, a.getSafetyScore(), flightRiskLabel, speechActs,
                 talkRatio, feedbacks, nextActionPlans, promises);
     }
 
@@ -1030,8 +1039,10 @@ public class AnalysisService {
                     : null;
 
             User member = userById.get(memberId);
+            HonestyDirection dir = computeDirection(honestyGap);
+            RiskLevel risk = computeRiskLevel(honestyGap);
             result.add(new RadarDataPoint(memberId, member.getName(), surveyScore, safetyScore, honestyGap,
-                    computeDirection(honestyGap), computeRiskLevel(honestyGap)));
+                    dir, risk, computeFlightRiskLabel(safetyScore, dir, risk)));
         }
         return result;
     }

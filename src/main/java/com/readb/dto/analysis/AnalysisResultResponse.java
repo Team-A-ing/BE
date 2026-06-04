@@ -12,6 +12,7 @@ public record AnalysisResultResponse(
         Integer durationSec,
         GapsResponse gaps,
         Double safetyScore,
+        String flightRiskLabel,
         SpeechActsResponse speechActs,
         TalkRatioResponse talkRatio,
         List<FeedbackItem> feedbacks,
