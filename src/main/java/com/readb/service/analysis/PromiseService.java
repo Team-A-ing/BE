@@ -81,7 +81,7 @@ public class PromiseService {
             int round = meeting == null ? 0 : (int) meetingRepository.countByLeaderIdAndMemberIdAndIdLessThanEqual(
                     meeting.getLeaderId(), meeting.getMemberId(), meeting.getId());
             return new OverduePromiseResponse(
-                    p.getId().intValue(),
+                    p.getId(),
                     p.getContent(),
                     p.getCategory(),
                     p.getDeadline() != null ? p.getDeadline().toString() : null,
