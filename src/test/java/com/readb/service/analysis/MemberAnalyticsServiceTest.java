@@ -13,6 +13,10 @@ import com.readb.repository.PromiseRepository;
 import com.readb.repository.RecordingRepository;
 import com.readb.repository.SurveyRepository;
 import com.readb.repository.UserRepository;
+import com.readb.repository.CareerEventRepository;
+import com.readb.repository.TeamRepository;
+import com.readb.repository.ActionPlanRepository;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,9 +59,13 @@ class MemberAnalyticsServiceTest {
                 mock(RecordingRepository.class),
                 mock(PromiseRepository.class),
                 mock(UserRepository.class),
+                mock(CareerEventRepository.class),
+                mock(TeamRepository.class),
+                mock(ActionPlanRepository.class),
                 mock(LlmAdapter.class),
                 mock(LlmAdapter.class),
-                new ObjectMapper()
+                new ObjectMapper(),
+                mock(PlatformTransactionManager.class)
         );
     }
 
