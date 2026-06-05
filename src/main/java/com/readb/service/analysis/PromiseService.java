@@ -64,14 +64,16 @@ public class PromiseService {
 
     @Transactional(readOnly = true)
     public List<OverduePromiseResponse> getOverduePromises(Long userId, Long memberId) {
-        if (!userRepository.existsById(memberId)) {
-            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
-        }
-        if (!userRepository.findById(userId).map(u -> u.getTeamId().equals(userRepository.findById(memberId).map(m -> m.getTeamId()).orElse(null))).orElse(false)) {
+        User member = userRepository.findById(memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        if (user.getTeamId() == null || !user.getTeamId().equals(member.getTeamId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
 
-        String memberName = userRepository.findById(memberId).map(User::getName).orElse("");
+        String memberName = member.getName();
         List<Promise> promises = promiseRepository.findByOwnerIdAndStatusOrderByCreatedAtDesc(memberId, PromiseStatus.PENDING);
 
         return promises.stream().map(p -> {
