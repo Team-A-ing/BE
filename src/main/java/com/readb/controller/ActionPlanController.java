@@ -36,7 +36,7 @@ public class ActionPlanController {
             @AuthenticationPrincipal Long leaderId) {
         ActionPlan plan = actionPlanRepository.findById(planId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ACTION_PLAN_NOT_FOUND));
-        if (!plan.getLeaderId().equals(leaderId)) {
+        if (!java.util.Objects.equals(plan.getLeaderId(), leaderId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
         plan.incomplete();
