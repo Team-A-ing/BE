@@ -22,6 +22,7 @@ import com.readb.dto.analysis.PortfolioResponse;
 import com.readb.dto.analysis.RadarDataPoint;
 import com.readb.dto.analysis.RiskLevel;
 import com.readb.dto.analysis.SpeechTrendResponse;
+import com.readb.dto.team.TeamCoachingResponse;
 import com.readb.dto.team.TeamDashboardResponse;
 import com.readb.domain.user.User;
 import com.readb.domain.actionplan.ActionPlan;
@@ -117,9 +118,12 @@ public class AnalysisService {
               "지연", "문제", "어려움", "기타", "상황" 같은 단일 추상 단어는 절대 포함하지 마세요.
               유사한 의미의 키워드는 하나로 통합하세요 (예: "시간", "효율", "시간 효율" → "시간 효율").
             - promises: "~하겠습니다", "~해드리겠습니다" 등 명확한 이행 의지가 담긴 발언에서 추출.
-              content는 원문 그대로가 아니라 "무엇을 하겠다"는 약속 내용을 한 문장으로 요약하세요.
-              예: "다음 주까지 AWS 접근 권한을 부여하겠습니다" → content: "AWS 접근 권한 부여"
-              owner는 약속한 사람 (leader 또는 member)
+              반드시 "누가 + 무엇을" 구조로 추출하세요.
+              content: "무엇을 하겠다"는 약속 내용을 한 문장으로 요약 (원문 그대로 금지)
+              context: 이 약속이 나온 대화 맥락을 1문장으로 요약
+                예) "제가 만들어 볼게요" 앞에서 "테스트 체크리스트" 논의 → context: "QA 테스트 체크리스트 논의 중 자발적 제안"
+              "제가 해볼게요"처럼 대상이 불명확하면 앞뒤 맥락에서 대상을 추론하여 content에 보충하세요.
+              owner: 약속한 사람 (leader 또는 member)
 
             [Few-shot 예시]
 
@@ -153,7 +157,7 @@ public class AnalysisService {
               "talkRatio": {"leaderRatio": 숫자, "memberRatio": 숫자},
               "topics": ["주제1", "주제2"],
               "blockerKeywords": ["키워드1", "키워드2"],
-              "promises": [{"content": "약속 내용", "owner": "leader 또는 member"}]
+              "promises": [{"content": "약속 내용", "context": "약속 맥락 1문장", "owner": "leader 또는 member"}]
             }
             """;
 
@@ -491,10 +495,13 @@ public class AnalysisService {
             String owner = String.valueOf(p.get("owner"));
             Long ownerId = "leader".equals(owner) ? meeting.getLeaderId() : meeting.getMemberId();
             String content = String.valueOf(p.get("content"));
+            Object ctxObj = p.get("context");
+            String context = ctxObj != null ? ctxObj.toString() : null;
             promiseRepository.save(Promise.builder()
                     .meetingId(meetingId)
                     .ownerId(ownerId)
                     .content(content)
+                    .context(context)
                     .build());
         }
     }
@@ -644,14 +651,17 @@ public class AnalysisService {
         // promises
         PromisesResponse promises = buildPromises(meeting, meetingId);
 
-        Double gap = gaps.honestyGap().gap();
+        Double gap = gaps.honestyGap() != null ? gaps.honestyGap().gap() : null;
         HonestyDirection dir = computeDirection(gap);
         RiskLevel risk = computeRiskLevel(gap);
         String flightRiskLabel = computeFlightRiskLabel(a.getSafetyScore(), dir, risk);
 
+        // 미팅 코칭 가이드 (GPT)
+        MeetingCoaching meetingCoaching = buildMeetingCoaching(a, gaps, talkRatio, promises, meeting, meetingId);
+
         return new AnalysisResultResponse(meetingId, round, member.getName(), member.getJobTitle(),
                 meetingDate, durationSec, gaps, a.getSafetyScore(), flightRiskLabel, speechActs,
-                talkRatio, feedbacks, nextActionPlans, promises);
+                talkRatio, feedbacks, nextActionPlans, promises, meetingCoaching);
     }
 
     private GapsResponse buildGaps(Analysis a, Double surveyScore, Meeting meeting) {
@@ -741,12 +751,12 @@ public class AnalysisService {
                         meeting.getLeaderId(), meeting.getMemberId(), meetingId);
         List<PreviousPromise> previous = prevMeeting.isEmpty() ? List.of()
                 : promiseRepository.findByMeetingId(prevMeeting.get().getId()).stream()
-                        .map(p -> new PreviousPromise(p.getId(), p.getContent(), p.getStatus().name()))
+                        .map(p -> new PreviousPromise(p.getId(), p.getContent(), p.getContext(), p.getStatus().name()))
                         .toList();
 
         // new: 현재 미팅의 약속
         List<NewPromise> newPromises = promiseRepository.findByMeetingId(meetingId).stream()
-                .map(p -> new NewPromise(p.getId(), p.getContent(), p.getCategory(),
+                .map(p -> new NewPromise(p.getId(), p.getContent(), p.getContext(), p.getCategory(),
                         p.getDeadline() != null ? p.getDeadline().toString() : null,
                         p.getStatus().name()))
                 .toList();
@@ -846,9 +856,13 @@ public class AnalysisService {
         // 추천 주제 (rule-based)
         List<String> recommendedTopics = buildRecommendedTopics(pendingPromises, lastMeeting, survey);
 
+        // 코칭 가이드 (GPT 생성)
+        PreBriefingResponse.CoachingGuide coachingGuide = buildCoachingGuide(
+                member.getName(), lastMeeting, pendingPromises, survey, prevMeetings, meeting.getMemberId());
+
         String scheduledAt = meeting.getScheduledAt() != null ? meeting.getScheduledAt().toString() : null;
         return new PreBriefingResponse(meetingId, round, member.getName(), member.getJobTitle(),
-                scheduledAt, survey, lastMeeting, pendingPromises, recommendedTopics);
+                scheduledAt, survey, lastMeeting, pendingPromises, recommendedTopics, coachingGuide);
     }
 
     private String computeQuadrant(Double safetyScore, Double surveyScore) {
@@ -901,6 +915,190 @@ public class AnalysisService {
                     .forEach(issue -> topics.add("서베이 이슈 확인: " + issue));
         }
         return topics;
+    }
+
+    @SuppressWarnings("unchecked")
+    private PreBriefingResponse.CoachingGuide buildCoachingGuide(
+            String memberName,
+            PreBriefingResponse.LastMeetingSummary lastMeeting,
+            List<PreBriefingResponse.PendingPromise> pendingPromises,
+            PreBriefingResponse.SurveyBrief survey,
+            List<Meeting> prevMeetings,
+            Long memberId) {
+        try {
+            // 최근 3회 Speech Act 추이 데이터 수집
+            List<Long> recentIds = prevMeetings.stream()
+                    .sorted((a, b) -> b.getId().compareTo(a.getId()))
+                    .limit(3).map(Meeting::getId).toList();
+            // ⑤ recentIds(최신순)와 일치하도록 meetingId 내림차순 정렬
+            Map<Long, Integer> idOrder = new java.util.HashMap<>();
+            for (int i = 0; i < recentIds.size(); i++) idOrder.put(recentIds.get(i), i);
+            List<Analysis> recentAnalyses = recentIds.isEmpty()
+                    ? List.of()
+                    : analysisRepository.findByMeetingIdIn(recentIds).stream()
+                            .sorted(java.util.Comparator.comparingInt(a -> idOrder.getOrDefault(a.getMeetingId(), 99)))
+                            .toList();
+
+            StringBuilder prompt = new StringBuilder();
+            prompt.append("[미팅 전 코칭 가이드 생성]\n");
+            prompt.append("멤버: ").append(memberName).append("\n\n");
+
+            if (!recentAnalyses.isEmpty()) {
+                prompt.append("[최근 미팅 Speech Act 추이]\n");
+                for (int i = 0; i < recentAnalyses.size(); i++) {
+                    Map<String, Object> acts = recentAnalyses.get(i).getSpeechActs();
+                    if (acts == null) continue;
+                    int v = listSize(acts.get("vulnerability"));
+                    int d = listSize(acts.get("constructiveDissent"));
+                    int ini = listSize(acts.get("initiative"));
+                    prompt.append(String.format("- %d회 전: 솔직한표현 %d회, 건설적의견 %d회, 자발적제안 %d회\n", i + 1, v, d, ini));
+                }
+                prompt.append("\n");
+            }
+
+            if (lastMeeting != null) {
+                prompt.append("[직전 미팅 상태]\n");
+                if (lastMeeting.safetyScore() != null)
+                    prompt.append("- Safety Score: ").append(lastMeeting.safetyScore()).append("\n");
+                if (lastMeeting.honestyGap() != null)
+                    prompt.append("- Honesty Gap: ").append(lastMeeting.honestyGap().direction())
+                            .append(" / ").append(lastMeeting.honestyGap().riskLevel()).append("\n");
+                if (lastMeeting.quadrant() != null)
+                    prompt.append("- 사분면: ").append(lastMeeting.quadrant()).append("\n");
+                prompt.append("\n");
+            }
+
+            if (!pendingPromises.isEmpty()) {
+                prompt.append("[미이행 약속]\n");
+                pendingPromises.forEach(p -> prompt.append("- ").append(p.content())
+                        .append(p.overdue() ? " (기한초과)" : "").append("\n"));
+                prompt.append("\n");
+            }
+
+            if (survey.submitted()) {
+                prompt.append("[사전 서베이]\n");
+                prompt.append("- 이슈: ").append(survey.issues()).append("\n");
+                prompt.append("\n");
+            }
+
+            prompt.append("""
+                    위 데이터를 바탕으로 리더를 위한 미팅 전 코칭 가이드를 생성하세요.
+                    Fact-Based 원칙: AI 해석 라벨("번아웃 의심", "소극적" 등) 절대 금지.
+                    수치와 관찰 사실만 사용하세요.
+
+                    반드시 아래 JSON 형식으로만 응답하세요:
+                    {
+                      "focusArea": "코칭 핵심 키워드 (예: 경청 강화, 약속 점검, 솔직함 유도)",
+                      "guideSummary": "핵심 관찰 사실 + 이번 미팅 제안 (1~2문장)",
+                      "evidence": ["수치 근거 1", "수치 근거 2"],
+                      "suggestedQuestions": ["제안 질문 1", "제안 질문 2"]
+                    }
+                    """);
+
+            String raw = gptAdapter.chat("당신은 1on1 미팅 코칭 전문가입니다.", prompt.toString());
+            Map<String, Object> parsed = parseJson(raw);
+            if (parsed == null) return null;
+
+            Object evidenceRaw = parsed.get("evidence");
+            Object questionsRaw = parsed.get("suggestedQuestions");
+            List<String> evidence = evidenceRaw instanceof List<?> l
+                    ? l.stream().map(Object::toString).toList() : List.of();
+            List<String> questions = questionsRaw instanceof List<?> l
+                    ? l.stream().map(Object::toString).toList() : List.of();
+
+            return new PreBriefingResponse.CoachingGuide(
+                    parsed.get("focusArea") != null ? parsed.get("focusArea").toString() : null,
+                    parsed.get("guideSummary") != null ? parsed.get("guideSummary").toString() : null,
+                    evidence, questions);
+        } catch (Exception e) {
+            log.warn("코칭 가이드 생성 실패. memberId={}", memberId, e);
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private MeetingCoaching buildMeetingCoaching(
+            Analysis a, GapsResponse gaps, TalkRatioResponse talkRatio,
+            PromisesResponse promises, Meeting meeting, Long meetingId) {
+        try {
+            StringBuilder prompt = new StringBuilder("[미팅 분석 코칭 가이드 생성]\n\n");
+
+            // Gap 데이터
+            if (gaps.alignmentGap() != null)
+                prompt.append("Alignment Gap 점수: ").append(gaps.alignmentGap().score())
+                        .append(" — ").append(gaps.alignmentGap().detail()).append("\n");
+            if (gaps.honestyGap() != null)
+                prompt.append("Honesty Gap: ").append(gaps.honestyGap().direction())
+                        .append(", 크기: ").append(gaps.honestyGap().gap())
+                        .append(" (").append(gaps.honestyGap().riskLevel()).append(")\n");
+            if (gaps.executionGap() != null)
+                prompt.append("Execution Gap 점수: ").append(gaps.executionGap().score())
+                        .append(", 총 약속 ").append(gaps.executionGap().totalPromises())
+                        .append("건 중 이행 ").append(gaps.executionGap().fulfilled()).append("건\n");
+
+            // 발화 비율
+            if (talkRatio != null)
+                prompt.append("발화 비율 — 리더: ").append(talkRatio.leaderRatio())
+                        .append("%, 멤버: ").append(talkRatio.memberRatio()).append("%\n");
+
+            // Speech Act
+            Map<String, Object> speechActs = a.getSpeechActs();
+            if (speechActs != null) {
+                prompt.append("Speech Act — 솔직한표현: ").append(listSize(speechActs.get("vulnerability")))
+                        .append("회, 건설적의견: ").append(listSize(speechActs.get("constructiveDissent")))
+                        .append("회, 자발적제안: ").append(listSize(speechActs.get("initiative"))).append("회\n");
+            }
+
+            // 약속 이행
+            if (!promises.previous().isEmpty()) {
+                long fulfilled = promises.previous().stream().filter(p -> "DONE".equals(p.status())).count();
+                prompt.append("이전 약속 이행: ").append(fulfilled).append("/").append(promises.previous().size()).append("건\n");
+            }
+
+            prompt.append("""
+
+                    위 데이터를 바탕으로 리더를 위한 미팅 후 코칭 가이드를 생성하세요.
+                    Fact-Based 원칙: AI 해석 라벨("번아웃 의심", "소극적" 등) 절대 금지. 수치와 관찰 사실만 사용.
+
+                    반드시 아래 JSON 형식으로만 응답하세요:
+                    {
+                      "gapSummary": {
+                        "alignment": "의제 일치도 관련 한 문장 (수치 포함)",
+                        "honesty": "솔직함 간극 관련 한 문장 (수치 포함)",
+                        "execution": "약속 이행 관련 한 문장 (수치 포함)"
+                      },
+                      "behaviorAnalysis": {
+                        "talkRatio": "발화 비율 관련 한 문장 + 제안",
+                        "speechActTrend": "Speech Act 관찰 사실 한 문장"
+                      },
+                      "nextSteps": ["다음 미팅 제안 1", "다음 미팅 제안 2"]
+                    }
+                    """);
+
+            String raw = gptAdapter.chat("당신은 1on1 미팅 분석 전문가입니다.", prompt.toString());
+            Map<String, Object> parsed = parseJson(raw);
+            if (parsed == null) return null;
+
+            Map<String, Object> gapRaw = parsed.get("gapSummary") instanceof Map<?, ?> m ? (Map<String, Object>) m : null;
+            Map<String, Object> behaviorRaw = parsed.get("behaviorAnalysis") instanceof Map<?, ?> m ? (Map<String, Object>) m : null;
+            Object stepsRaw = parsed.get("nextSteps");
+            List<String> nextSteps = stepsRaw instanceof List<?> l
+                    ? l.stream().map(Object::toString).toList() : List.of();
+
+            GapSummary gapSummary = gapRaw == null ? null : new GapSummary(
+                    gapRaw.get("alignment") != null ? gapRaw.get("alignment").toString() : null,
+                    gapRaw.get("honesty") != null ? gapRaw.get("honesty").toString() : null,
+                    gapRaw.get("execution") != null ? gapRaw.get("execution").toString() : null);
+
+            BehaviorAnalysis behaviorAnalysis = behaviorRaw == null ? null : new BehaviorAnalysis(
+                    behaviorRaw.get("talkRatio") != null ? behaviorRaw.get("talkRatio").toString() : null,
+                    behaviorRaw.get("speechActTrend") != null ? behaviorRaw.get("speechActTrend").toString() : null);
+
+            return new MeetingCoaching(gapSummary, behaviorAnalysis, nextSteps);
+        } catch (Exception e) {
+            log.warn("미팅 코칭 가이드 생성 실패. meetingId={}", meetingId, e);
+            return null;
+        }
     }
 
     private String formatTimestamp(Object seconds) {
@@ -1050,6 +1248,127 @@ public class AnalysisService {
     }
 
     @Transactional(readOnly = true)
+    public TeamCoachingResponse getTeamCoaching(Long teamId, Long leaderId) {
+        // ① IDOR 방어: 요청자가 해당 팀의 리더인지 검증
+        teamRepository.findById(teamId).ifPresent(team -> {
+            if (!leaderId.equals(team.getLeaderId())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN);
+            }
+        });
+
+        List<User> members = userRepository.findByTeamId(teamId).stream()
+                .filter(u -> u.getRole() != UserRole.LEADER).toList();
+        if (members.isEmpty()) return new TeamCoachingResponse("팀 멤버 데이터가 없습니다.", List.of(), List.of());
+
+        List<Long> memberIds = members.stream().map(User::getId).toList();
+        // ⑥ Collectors.toMap NPE 방지: HashMap 직접 수집
+        Map<Long, User> userById = new java.util.HashMap<>();
+        members.forEach(u -> userById.put(u.getId(), u));
+
+        // 멤버별 최신 분석 데이터
+        Map<Long, Long> latestMeetingIdByMember = new LinkedHashMap<>();
+        meetingRepository.findByMemberIdInOrderByCreatedAtDesc(memberIds)
+                .forEach(m -> latestMeetingIdByMember.putIfAbsent(m.getMemberId(), m.getId()));
+
+        List<Long> latestIds = new ArrayList<>(latestMeetingIdByMember.values());
+        if (latestIds.isEmpty()) return new TeamCoachingResponse("완료된 미팅 데이터가 없습니다.", List.of(), List.of());
+
+        Map<Long, Analysis> analysisByMeetingId = analysisRepository.findByMeetingIdIn(latestIds)
+                .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
+
+        // GPT 입력 프롬프트 구성
+        StringBuilder prompt = new StringBuilder("[팀 전체 코칭 가이드 생성]\n\n");
+        prompt.append("[멤버별 최신 미팅 분석]\n");
+
+        List<String> memberSummaries = new ArrayList<>();
+        for (Map.Entry<Long, Long> entry : latestMeetingIdByMember.entrySet()) {
+
+            Long memberId = entry.getKey();
+            Long meetingId = entry.getValue();
+            Analysis a = analysisByMeetingId.get(meetingId);
+            if (a == null) continue;
+
+            User member = userById.get(memberId);
+            Map<String, Object> acts = a.getSpeechActs();
+            int v = acts != null ? listSize(acts.get("vulnerability")) : 0;
+            int d = acts != null ? listSize(acts.get("constructiveDissent")) : 0;
+            int i = acts != null ? listSize(acts.get("initiative")) : 0;
+
+            memberSummaries.add(String.format(
+                    "- %s(id:%d): SafetyScore=%.0f, V=%d, D=%d, I=%d, HonestyGap=%s",
+                    member.getName(), memberId,
+                    a.getSafetyScore() != null ? a.getSafetyScore() : 0,
+                    v, d, i,
+                    a.getHonestyGap() != null ? String.format(java.util.Locale.US, "%.1f", a.getHonestyGap()) : "N/A"));
+        }
+        // ③ 빈 데이터 조기 반환 — 분석 완료 미팅 없으면 GPT 호출 불필요
+        if (memberSummaries.isEmpty()) return new TeamCoachingResponse("분석 완료된 미팅 데이터가 없습니다.", List.of(), List.of());
+
+        memberSummaries.forEach(s -> prompt.append(s).append("\n"));
+
+        prompt.append("""
+
+                위 팀 데이터를 바탕으로 리더를 위한 팀 코칭 가이드를 생성하세요.
+                Fact-Based 원칙: 수치와 관찰 사실만 사용. "번아웃 의심" 등 AI 해석 라벨 금지.
+                insights의 type은 반드시 ATTENTION(주의) 또는 POSITIVE(긍정) 중 하나.
+                relatedMemberId는 언급된 멤버의 id(숫자)로 반환하세요.
+
+                반드시 아래 JSON 형식으로만 응답하세요:
+                {
+                  "overallAssessment": "팀 전체 상태 요약 1문장 (수치 포함)",
+                  "insights": [
+                    {
+                      "type": "ATTENTION",
+                      "content": "관찰 사실 1문장 (수치 포함)",
+                      "relatedMemberId": 멤버id숫자
+                    }
+                  ],
+                  "suggestedActions": ["리더 제안 액션 1", "리더 제안 액션 2"]
+                }
+                """);
+
+        try {
+            String raw = gptAdapter.chat("당신은 1on1 미팅 팀 분석 전문가입니다.", prompt.toString());
+            Map<String, Object> parsed = parseJson(raw);
+            if (parsed == null) return null;
+
+            Object insightsRaw = parsed.get("insights");
+            List<TeamCoachingResponse.Insight> insights = new ArrayList<>();
+            if (insightsRaw instanceof List<?> list) {
+                for (Object item : list) {
+                    if (!(item instanceof Map<?, ?> m)) continue;
+                    // ④ LLM이 ID를 문자열로 반환하는 경우도 방어 처리
+                    Object memberIdObj = m.get("relatedMemberId");
+                    Long relMemberId = null;
+                    if (memberIdObj instanceof Number n) {
+                        relMemberId = n.longValue();
+                    } else if (memberIdObj instanceof String s) {
+                        try { relMemberId = Long.parseLong(s); } catch (NumberFormatException ignored) {}
+                    }
+                    String relMemberName = relMemberId != null && userById.containsKey(relMemberId)
+                            ? userById.get(relMemberId).getName() : null;
+                    insights.add(new TeamCoachingResponse.Insight(
+                            m.get("type") != null ? m.get("type").toString() : null,
+                            m.get("content") != null ? m.get("content").toString() : null,
+                            relMemberId, relMemberName));
+                }
+            }
+
+            Object actionsRaw = parsed.get("suggestedActions");
+            List<String> actions = actionsRaw instanceof List<?> l
+                    ? l.stream().map(Object::toString).toList() : List.of();
+
+            String assessment = parsed.get("overallAssessment") != null
+                    ? parsed.get("overallAssessment").toString() : null;
+
+            return new TeamCoachingResponse(assessment, insights, actions);
+        } catch (Exception e) {
+            log.warn("팀 코칭 가이드 생성 실패. teamId={}", teamId, e);
+            return null;
+        }
+    }
+
+    @Transactional(readOnly = true)
     public List<TalkRatioRankingItem> getTalkRatioRanking(Long teamId) {
         List<User> members = userRepository.findByTeamId(teamId);
         if (members.isEmpty()) return List.of();
@@ -1114,31 +1433,41 @@ public class AnalysisService {
         Map<Long, Long> memberByMeeting = meetings.stream()
                 .collect(Collectors.toMap(Meeting::getId, Meeting::getMemberId));
 
-        // 키워드별 (총 출현 횟수, 언급 멤버 Set) 집계
+        // 멤버 이름 조회
+        List<Long> memberIds = meetings.stream().map(Meeting::getMemberId).distinct().toList();
+        // ⑥ Collectors.toMap NPE 방지: name이 null인 경우 대비
+        Map<Long, String> memberNameById = new java.util.HashMap<>();
+        userRepository.findAllById(memberIds).forEach(u -> memberNameById.put(u.getId(), u.getName() != null ? u.getName() : "알 수 없음"));
+
+        // 키워드별 (총 출현 횟수, 멤버별 언급 횟수) 집계
         Map<String, Integer> countMap = new LinkedHashMap<>();
-        Map<String, java.util.Set<Long>> memberMap = new LinkedHashMap<>();
+        Map<String, Map<Long, Integer>> memberCountMap = new LinkedHashMap<>();
         analysisRepository.findByMeetingIdIn(meetingIds).forEach(analysis -> {
-            List<String> keywords = analysis.getBlockerKeywords();
-            if (keywords == null) return;
+            List<String> kws = analysis.getBlockerKeywords();
+            if (kws == null) return;
             Long memberId = memberByMeeting.get(analysis.getMeetingId());
-            keywords.forEach(kw -> {
+            kws.stream().filter(Objects::nonNull).forEach(kw -> {
                 countMap.merge(kw, 1, Integer::sum);
-                memberMap.computeIfAbsent(kw, k -> new java.util.HashSet<>()).add(memberId);
+                memberCountMap.computeIfAbsent(kw, k -> new java.util.HashMap<>())
+                        .merge(memberId, 1, Integer::sum);
             });
         });
-
-        Map<Long, String> nameById = userRepository.findByTeamId(teamId)
-                .stream().collect(Collectors.toMap(User::getId, User::getName));
 
         List<BlockerKeyword> keywords = countMap.entrySet().stream()
                 .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
                 .map(e -> {
-                    java.util.Set<Long> ids = memberMap.getOrDefault(e.getKey(), java.util.Set.of());
-                    List<String> names = ids.stream()
-                            .map(id -> nameById.getOrDefault(id, "멤버#" + id))
-                            .sorted()
+                    Map<Long, Integer> mcMap = memberCountMap.getOrDefault(e.getKey(), Map.of());
+                    List<BlockerKeyword.RelatedMember> relatedMembers = mcMap.entrySet().stream()
+                            .sorted(Map.Entry.<Long, Integer>comparingByValue().reversed())
+                            .map(me -> new BlockerKeyword.RelatedMember(
+                                    me.getKey(),
+                                    memberNameById.getOrDefault(me.getKey(), "알 수 없음"),
+                                    me.getValue()))
                             .toList();
-                    return new BlockerKeyword(e.getKey(), e.getValue(), ids.size(), names);
+                    String guide = e.getValue() >= 3
+                            ? "이번 주 팀 회의에서 '" + e.getKey() + "' 해결 안건을 상정하세요."
+                            : "'" + e.getKey() + "' 관련 멤버와 1on1에서 구체적 원인을 파악하세요.";
+                    return new BlockerKeyword(e.getKey(), e.getValue(), mcMap.size(), relatedMembers, guide);
                 })
                 .toList();
 
@@ -1147,11 +1476,8 @@ public class AnalysisService {
                 .map(kw -> {
                     String severity = kw.count() >= 3 ? "ERROR" : kw.count() == 2 ? "WARNING" : "INFO";
                     String summary = kw.mentionedBy() + "명의 멤버가 총 " + kw.count() + "회 언급";
-                    String guide = kw.count() >= 3
-                            ? "이번 주 팀 회의에서 '" + kw.keyword() + "' 해결 안건을 상정하세요."
-                            : "'" + kw.keyword() + "' 관련 멤버와 1on1에서 구체적 원인을 파악하세요.";
                     return new BlockerPyramidResponse.ActionPrescription(severity,
-                            kw.keyword() + " 반복 언급", summary, guide);
+                            kw.keyword() + " 반복 언급", summary, kw.actionGuide());
                 })
                 .toList();
 
