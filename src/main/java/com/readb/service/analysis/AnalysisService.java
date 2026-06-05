@@ -930,8 +930,14 @@ public class AnalysisService {
             List<Long> recentIds = prevMeetings.stream()
                     .sorted((a, b) -> b.getId().compareTo(a.getId()))
                     .limit(3).map(Meeting::getId).toList();
+            // ⑤ recentIds(최신순)와 일치하도록 meetingId 내림차순 정렬
+            Map<Long, Integer> idOrder = new java.util.HashMap<>();
+            for (int i = 0; i < recentIds.size(); i++) idOrder.put(recentIds.get(i), i);
             List<Analysis> recentAnalyses = recentIds.isEmpty()
-                    ? List.of() : analysisRepository.findByMeetingIdIn(recentIds);
+                    ? List.of()
+                    : analysisRepository.findByMeetingIdIn(recentIds).stream()
+                            .sorted(java.util.Comparator.comparingInt(a -> idOrder.getOrDefault(a.getMeetingId(), 99)))
+                            .toList();
 
             StringBuilder prompt = new StringBuilder();
             prompt.append("[미팅 전 코칭 가이드 생성]\n");
@@ -1242,13 +1248,22 @@ public class AnalysisService {
     }
 
     @Transactional(readOnly = true)
-    public TeamCoachingResponse getTeamCoaching(Long teamId) {
+    public TeamCoachingResponse getTeamCoaching(Long teamId, Long leaderId) {
+        // ① IDOR 방어: 요청자가 해당 팀의 리더인지 검증
+        teamRepository.findById(teamId).ifPresent(team -> {
+            if (!leaderId.equals(team.getLeaderId())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN);
+            }
+        });
+
         List<User> members = userRepository.findByTeamId(teamId).stream()
                 .filter(u -> u.getRole() != UserRole.LEADER).toList();
         if (members.isEmpty()) return new TeamCoachingResponse("팀 멤버 데이터가 없습니다.", List.of(), List.of());
 
         List<Long> memberIds = members.stream().map(User::getId).toList();
-        Map<Long, User> userById = members.stream().collect(Collectors.toMap(User::getId, u -> u));
+        // ⑥ Collectors.toMap NPE 방지: HashMap 직접 수집
+        Map<Long, User> userById = new java.util.HashMap<>();
+        members.forEach(u -> userById.put(u.getId(), u));
 
         // 멤버별 최신 분석 데이터
         Map<Long, Long> latestMeetingIdByMember = new LinkedHashMap<>();
@@ -1267,6 +1282,7 @@ public class AnalysisService {
 
         List<String> memberSummaries = new ArrayList<>();
         for (Map.Entry<Long, Long> entry : latestMeetingIdByMember.entrySet()) {
+
             Long memberId = entry.getKey();
             Long meetingId = entry.getValue();
             Analysis a = analysisByMeetingId.get(meetingId);
@@ -1285,6 +1301,9 @@ public class AnalysisService {
                     v, d, i,
                     a.getHonestyGap() != null ? String.format(java.util.Locale.US, "%.1f", a.getHonestyGap()) : "N/A"));
         }
+        // ③ 빈 데이터 조기 반환 — 분석 완료 미팅 없으면 GPT 호출 불필요
+        if (memberSummaries.isEmpty()) return new TeamCoachingResponse("분석 완료된 미팅 데이터가 없습니다.", List.of(), List.of());
+
         memberSummaries.forEach(s -> prompt.append(s).append("\n"));
 
         prompt.append("""
@@ -1318,8 +1337,14 @@ public class AnalysisService {
             if (insightsRaw instanceof List<?> list) {
                 for (Object item : list) {
                     if (!(item instanceof Map<?, ?> m)) continue;
+                    // ④ LLM이 ID를 문자열로 반환하는 경우도 방어 처리
                     Object memberIdObj = m.get("relatedMemberId");
-                    Long relMemberId = memberIdObj instanceof Number n ? n.longValue() : null;
+                    Long relMemberId = null;
+                    if (memberIdObj instanceof Number n) {
+                        relMemberId = n.longValue();
+                    } else if (memberIdObj instanceof String s) {
+                        try { relMemberId = Long.parseLong(s); } catch (NumberFormatException ignored) {}
+                    }
                     String relMemberName = relMemberId != null && userById.containsKey(relMemberId)
                             ? userById.get(relMemberId).getName() : null;
                     insights.add(new TeamCoachingResponse.Insight(
@@ -1410,8 +1435,9 @@ public class AnalysisService {
 
         // 멤버 이름 조회
         List<Long> memberIds = meetings.stream().map(Meeting::getMemberId).distinct().toList();
-        Map<Long, String> memberNameById = userRepository.findAllById(memberIds).stream()
-                .collect(Collectors.toMap(User::getId, User::getName));
+        // ⑥ Collectors.toMap NPE 방지: name이 null인 경우 대비
+        Map<Long, String> memberNameById = new java.util.HashMap<>();
+        userRepository.findAllById(memberIds).forEach(u -> memberNameById.put(u.getId(), u.getName() != null ? u.getName() : "알 수 없음"));
 
         // 키워드별 (총 출현 횟수, 멤버별 언급 횟수) 집계
         Map<String, Integer> countMap = new LinkedHashMap<>();

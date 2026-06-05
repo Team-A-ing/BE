@@ -73,7 +73,10 @@ public class TeamController {
     }
 
     @GetMapping("/{teamId}/coaching")
-    public ApiResponse<TeamCoachingResponse> getTeamCoaching(@PathVariable Long teamId) {
-        return ApiResponse.ok(analysisService.getTeamCoaching(teamId));
+    @PreAuthorize("hasRole('LEADER')")
+    public ApiResponse<TeamCoachingResponse> getTeamCoaching(
+            @PathVariable Long teamId,
+            @AuthenticationPrincipal Long leaderId) {
+        return ApiResponse.ok(analysisService.getTeamCoaching(teamId, leaderId));
     }
 }
