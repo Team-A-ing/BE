@@ -1,6 +1,6 @@
 package com.readb.dto.promise;
 public record OverduePromiseResponse (
-            int promiseId,
+            Long promiseId,
             String content,
             String category,
             String dueDate,
