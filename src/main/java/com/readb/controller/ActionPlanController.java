@@ -29,4 +29,18 @@ public class ActionPlanController {
         actionPlanRepository.save(plan);
         return ApiResponse.ok();
     }
+
+    @PatchMapping("/{planId}/incomplete")
+    public ApiResponse<Void> incomplete(
+            @PathVariable Long planId,
+            @AuthenticationPrincipal Long leaderId) {
+        ActionPlan plan = actionPlanRepository.findById(planId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ACTION_PLAN_NOT_FOUND));
+        if (!java.util.Objects.equals(plan.getLeaderId(), leaderId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        plan.incomplete();
+        actionPlanRepository.save(plan);
+        return ApiResponse.ok();
+    }
 }

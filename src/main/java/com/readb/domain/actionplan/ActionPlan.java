@@ -38,4 +38,8 @@ public class ActionPlan {
     public void complete() {
         this.isCompleted = true;
     }
+
+    public void incomplete() {
+        this.isCompleted = false;
+    }
 }
