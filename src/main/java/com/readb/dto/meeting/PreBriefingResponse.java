@@ -11,7 +11,8 @@ public record PreBriefingResponse(
         SurveyBrief survey,
         LastMeetingSummary lastMeeting,
         List<PendingPromise> pendingPromises,
-        List<String> recommendedTopics
+        List<String> recommendedTopics,
+        CoachingGuide coachingGuide
 ) {
     public record SurveyBrief(
             boolean submitted,
@@ -31,6 +32,13 @@ public record PreBriefingResponse(
     ) {}
 
     public record HonestyGapBrief(String direction, String riskLevel) {}
+
+    public record CoachingGuide(
+            String focusArea,
+            String guideSummary,
+            List<String> evidence,
+            List<String> suggestedQuestions
+    ) {}
 
     public record PendingPromise(
             Long promiseId,

@@ -852,9 +852,13 @@ public class AnalysisService {
         // 추천 주제 (rule-based)
         List<String> recommendedTopics = buildRecommendedTopics(pendingPromises, lastMeeting, survey);
 
+        // 코칭 가이드 (GPT 생성)
+        PreBriefingResponse.CoachingGuide coachingGuide = buildCoachingGuide(
+                member.getName(), lastMeeting, pendingPromises, survey, prevMeetings, meeting.getMemberId());
+
         String scheduledAt = meeting.getScheduledAt() != null ? meeting.getScheduledAt().toString() : null;
         return new PreBriefingResponse(meetingId, round, member.getName(), member.getJobTitle(),
-                scheduledAt, survey, lastMeeting, pendingPromises, recommendedTopics);
+                scheduledAt, survey, lastMeeting, pendingPromises, recommendedTopics, coachingGuide);
     }
 
     private String computeQuadrant(Double safetyScore, Double surveyScore) {
@@ -907,6 +911,99 @@ public class AnalysisService {
                     .forEach(issue -> topics.add("서베이 이슈 확인: " + issue));
         }
         return topics;
+    }
+
+    @SuppressWarnings("unchecked")
+    private PreBriefingResponse.CoachingGuide buildCoachingGuide(
+            String memberName,
+            PreBriefingResponse.LastMeetingSummary lastMeeting,
+            List<PreBriefingResponse.PendingPromise> pendingPromises,
+            PreBriefingResponse.SurveyBrief survey,
+            List<Meeting> prevMeetings,
+            Long memberId) {
+        try {
+            // 최근 3회 Speech Act 추이 데이터 수집
+            List<Long> recentIds = prevMeetings.stream()
+                    .sorted((a, b) -> b.getId().compareTo(a.getId()))
+                    .limit(3).map(Meeting::getId).toList();
+            List<Analysis> recentAnalyses = recentIds.isEmpty()
+                    ? List.of() : analysisRepository.findByMeetingIdIn(recentIds);
+
+            StringBuilder prompt = new StringBuilder();
+            prompt.append("[미팅 전 코칭 가이드 생성]\n");
+            prompt.append("멤버: ").append(memberName).append("\n\n");
+
+            if (!recentAnalyses.isEmpty()) {
+                prompt.append("[최근 미팅 Speech Act 추이]\n");
+                for (int i = 0; i < recentAnalyses.size(); i++) {
+                    Map<String, Object> acts = recentAnalyses.get(i).getSpeechActs();
+                    if (acts == null) continue;
+                    int v = listSize(acts.get("vulnerability"));
+                    int d = listSize(acts.get("constructiveDissent"));
+                    int ini = listSize(acts.get("initiative"));
+                    prompt.append(String.format("- %d회 전: 솔직한표현 %d회, 건설적의견 %d회, 자발적제안 %d회\n", i + 1, v, d, ini));
+                }
+                prompt.append("\n");
+            }
+
+            if (lastMeeting != null) {
+                prompt.append("[직전 미팅 상태]\n");
+                if (lastMeeting.safetyScore() != null)
+                    prompt.append("- Safety Score: ").append(lastMeeting.safetyScore()).append("\n");
+                if (lastMeeting.honestyGap() != null)
+                    prompt.append("- Honesty Gap: ").append(lastMeeting.honestyGap().direction())
+                            .append(" / ").append(lastMeeting.honestyGap().riskLevel()).append("\n");
+                if (lastMeeting.quadrant() != null)
+                    prompt.append("- 사분면: ").append(lastMeeting.quadrant()).append("\n");
+                prompt.append("\n");
+            }
+
+            if (!pendingPromises.isEmpty()) {
+                prompt.append("[미이행 약속]\n");
+                pendingPromises.forEach(p -> prompt.append("- ").append(p.content())
+                        .append(p.overdue() ? " (기한초과)" : "").append("\n"));
+                prompt.append("\n");
+            }
+
+            if (survey.submitted()) {
+                prompt.append("[사전 서베이]\n");
+                prompt.append("- 이슈: ").append(survey.issues()).append("\n");
+                prompt.append("\n");
+            }
+
+            prompt.append("""
+                    위 데이터를 바탕으로 리더를 위한 미팅 전 코칭 가이드를 생성하세요.
+                    Fact-Based 원칙: AI 해석 라벨("번아웃 의심", "소극적" 등) 절대 금지.
+                    수치와 관찰 사실만 사용하세요.
+
+                    반드시 아래 JSON 형식으로만 응답하세요:
+                    {
+                      "focusArea": "코칭 핵심 키워드 (예: 경청 강화, 약속 점검, 솔직함 유도)",
+                      "guideSummary": "핵심 관찰 사실 + 이번 미팅 제안 (1~2문장)",
+                      "evidence": ["수치 근거 1", "수치 근거 2"],
+                      "suggestedQuestions": ["제안 질문 1", "제안 질문 2"]
+                    }
+                    """);
+
+            String raw = gptAdapter.chat("당신은 1on1 미팅 코칭 전문가입니다.", prompt.toString());
+            Map<String, Object> parsed = parseJson(raw);
+            if (parsed == null) return null;
+
+            Object evidenceRaw = parsed.get("evidence");
+            Object questionsRaw = parsed.get("suggestedQuestions");
+            List<String> evidence = evidenceRaw instanceof List<?> l
+                    ? l.stream().map(Object::toString).toList() : List.of();
+            List<String> questions = questionsRaw instanceof List<?> l
+                    ? l.stream().map(Object::toString).toList() : List.of();
+
+            return new PreBriefingResponse.CoachingGuide(
+                    parsed.get("focusArea") != null ? parsed.get("focusArea").toString() : null,
+                    parsed.get("guideSummary") != null ? parsed.get("guideSummary").toString() : null,
+                    evidence, questions);
+        } catch (Exception e) {
+            log.warn("코칭 가이드 생성 실패. memberId={}", memberId, e);
+            return null;
+        }
     }
 
     private String formatTimestamp(Object seconds) {
