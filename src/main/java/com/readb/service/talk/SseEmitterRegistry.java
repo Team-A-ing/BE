@@ -21,9 +21,10 @@ public class SseEmitterRegistry {
 
     public SseEmitter register(Long meetingId) {
         SseEmitter emitter = new SseEmitter(30 * 60 * 1000L);
-        emitters.put(meetingId, emitter);
-        emitter.onCompletion(() -> emitters.remove(meetingId));
-        emitter.onTimeout(() -> emitters.remove(meetingId));
+        SseEmitter previous = emitters.put(meetingId, emitter);
+        if (previous != null) previous.complete();
+        emitter.onCompletion(() -> emitters.remove(meetingId, emitter));
+        emitter.onTimeout(() -> emitters.remove(meetingId, emitter));
         return emitter;
     }
 
@@ -36,7 +37,7 @@ public class SseEmitterRegistry {
                     .data(objectMapper.writeValueAsString(event)));
         } catch (IOException e) {
             log.warn("SSE push failed for meetingId={}", meetingId);
-            emitters.remove(meetingId);
+            emitters.remove(meetingId, emitter);
         }
     }
 
