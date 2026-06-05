@@ -4,6 +4,7 @@ import com.readb.common.response.ApiResponse;
 import com.readb.dto.analysis.BlockerPyramidResponse;
 import com.readb.dto.analysis.RadarDataPoint;
 import com.readb.dto.analysis.TalkRatioRankingItem;
+import com.readb.dto.team.TeamCoachingResponse;
 import com.readb.dto.team.TeamCreateRequest;
 import com.readb.dto.team.TeamCreateResponse;
 import com.readb.dto.team.TeamDashboardResponse;
@@ -69,5 +70,10 @@ public class TeamController {
     @GetMapping("/{teamId}/talk-ratio-ranking")
     public ApiResponse<List<TalkRatioRankingItem>> getTalkRatioRanking(@PathVariable Long teamId) {
         return ApiResponse.ok(analysisService.getTalkRatioRanking(teamId));
+    }
+
+    @GetMapping("/{teamId}/coaching")
+    public ApiResponse<TeamCoachingResponse> getTeamCoaching(@PathVariable Long teamId) {
+        return ApiResponse.ok(analysisService.getTeamCoaching(teamId));
     }
 }

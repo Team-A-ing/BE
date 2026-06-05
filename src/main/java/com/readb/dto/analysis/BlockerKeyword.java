@@ -1,8 +1,13 @@
 package com.readb.dto.analysis;
 
+import java.util.List;
+
 public record BlockerKeyword(
         String keyword,
         int count,
         int mentionedBy,
-        java.util.List<String> memberNames
-) {}
+        List<RelatedMember> relatedMembers,
+        String actionGuide
+) {
+    public record RelatedMember(Long memberId, String memberName, int mentionCount) {}
+}

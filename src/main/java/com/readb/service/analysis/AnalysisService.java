@@ -22,6 +22,7 @@ import com.readb.dto.analysis.PortfolioResponse;
 import com.readb.dto.analysis.RadarDataPoint;
 import com.readb.dto.analysis.RiskLevel;
 import com.readb.dto.analysis.SpeechTrendResponse;
+import com.readb.dto.team.TeamCoachingResponse;
 import com.readb.dto.team.TeamDashboardResponse;
 import com.readb.domain.user.User;
 import com.readb.domain.actionplan.ActionPlan;
@@ -1241,6 +1242,108 @@ public class AnalysisService {
     }
 
     @Transactional(readOnly = true)
+    public TeamCoachingResponse getTeamCoaching(Long teamId) {
+        List<User> members = userRepository.findByTeamId(teamId).stream()
+                .filter(u -> u.getRole() != UserRole.LEADER).toList();
+        if (members.isEmpty()) return new TeamCoachingResponse("팀 멤버 데이터가 없습니다.", List.of(), List.of());
+
+        List<Long> memberIds = members.stream().map(User::getId).toList();
+        Map<Long, User> userById = members.stream().collect(Collectors.toMap(User::getId, u -> u));
+
+        // 멤버별 최신 분석 데이터
+        Map<Long, Long> latestMeetingIdByMember = new LinkedHashMap<>();
+        meetingRepository.findByMemberIdInOrderByCreatedAtDesc(memberIds)
+                .forEach(m -> latestMeetingIdByMember.putIfAbsent(m.getMemberId(), m.getId()));
+
+        List<Long> latestIds = new ArrayList<>(latestMeetingIdByMember.values());
+        if (latestIds.isEmpty()) return new TeamCoachingResponse("완료된 미팅 데이터가 없습니다.", List.of(), List.of());
+
+        Map<Long, Analysis> analysisByMeetingId = analysisRepository.findByMeetingIdIn(latestIds)
+                .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
+
+        // GPT 입력 프롬프트 구성
+        StringBuilder prompt = new StringBuilder("[팀 전체 코칭 가이드 생성]\n\n");
+        prompt.append("[멤버별 최신 미팅 분석]\n");
+
+        List<String> memberSummaries = new ArrayList<>();
+        for (Map.Entry<Long, Long> entry : latestMeetingIdByMember.entrySet()) {
+            Long memberId = entry.getKey();
+            Long meetingId = entry.getValue();
+            Analysis a = analysisByMeetingId.get(meetingId);
+            if (a == null) continue;
+
+            User member = userById.get(memberId);
+            Map<String, Object> acts = a.getSpeechActs();
+            int v = acts != null ? listSize(acts.get("vulnerability")) : 0;
+            int d = acts != null ? listSize(acts.get("constructiveDissent")) : 0;
+            int i = acts != null ? listSize(acts.get("initiative")) : 0;
+
+            memberSummaries.add(String.format(
+                    "- %s(id:%d): SafetyScore=%.0f, V=%d, D=%d, I=%d, HonestyGap=%s",
+                    member.getName(), memberId,
+                    a.getSafetyScore() != null ? a.getSafetyScore() : 0,
+                    v, d, i,
+                    a.getHonestyGap() != null ? String.format(java.util.Locale.US, "%.1f", a.getHonestyGap()) : "N/A"));
+        }
+        memberSummaries.forEach(s -> prompt.append(s).append("\n"));
+
+        prompt.append("""
+
+                위 팀 데이터를 바탕으로 리더를 위한 팀 코칭 가이드를 생성하세요.
+                Fact-Based 원칙: 수치와 관찰 사실만 사용. "번아웃 의심" 등 AI 해석 라벨 금지.
+                insights의 type은 반드시 ATTENTION(주의) 또는 POSITIVE(긍정) 중 하나.
+                relatedMemberId는 언급된 멤버의 id(숫자)로 반환하세요.
+
+                반드시 아래 JSON 형식으로만 응답하세요:
+                {
+                  "overallAssessment": "팀 전체 상태 요약 1문장 (수치 포함)",
+                  "insights": [
+                    {
+                      "type": "ATTENTION",
+                      "content": "관찰 사실 1문장 (수치 포함)",
+                      "relatedMemberId": 멤버id숫자
+                    }
+                  ],
+                  "suggestedActions": ["리더 제안 액션 1", "리더 제안 액션 2"]
+                }
+                """);
+
+        try {
+            String raw = gptAdapter.chat("당신은 1on1 미팅 팀 분석 전문가입니다.", prompt.toString());
+            Map<String, Object> parsed = parseJson(raw);
+            if (parsed == null) return null;
+
+            Object insightsRaw = parsed.get("insights");
+            List<TeamCoachingResponse.Insight> insights = new ArrayList<>();
+            if (insightsRaw instanceof List<?> list) {
+                for (Object item : list) {
+                    if (!(item instanceof Map<?, ?> m)) continue;
+                    Object memberIdObj = m.get("relatedMemberId");
+                    Long relMemberId = memberIdObj instanceof Number n ? n.longValue() : null;
+                    String relMemberName = relMemberId != null && userById.containsKey(relMemberId)
+                            ? userById.get(relMemberId).getName() : null;
+                    insights.add(new TeamCoachingResponse.Insight(
+                            m.get("type") != null ? m.get("type").toString() : null,
+                            m.get("content") != null ? m.get("content").toString() : null,
+                            relMemberId, relMemberName));
+                }
+            }
+
+            Object actionsRaw = parsed.get("suggestedActions");
+            List<String> actions = actionsRaw instanceof List<?> l
+                    ? l.stream().map(Object::toString).toList() : List.of();
+
+            String assessment = parsed.get("overallAssessment") != null
+                    ? parsed.get("overallAssessment").toString() : null;
+
+            return new TeamCoachingResponse(assessment, insights, actions);
+        } catch (Exception e) {
+            log.warn("팀 코칭 가이드 생성 실패. teamId={}", teamId, e);
+            return null;
+        }
+    }
+
+    @Transactional(readOnly = true)
     public List<TalkRatioRankingItem> getTalkRatioRanking(Long teamId) {
         List<User> members = userRepository.findByTeamId(teamId);
         if (members.isEmpty()) return List.of();
@@ -1305,31 +1408,40 @@ public class AnalysisService {
         Map<Long, Long> memberByMeeting = meetings.stream()
                 .collect(Collectors.toMap(Meeting::getId, Meeting::getMemberId));
 
-        // 키워드별 (총 출현 횟수, 언급 멤버 Set) 집계
+        // 멤버 이름 조회
+        List<Long> memberIds = meetings.stream().map(Meeting::getMemberId).distinct().toList();
+        Map<Long, String> memberNameById = userRepository.findAllById(memberIds).stream()
+                .collect(Collectors.toMap(User::getId, User::getName));
+
+        // 키워드별 (총 출현 횟수, 멤버별 언급 횟수) 집계
         Map<String, Integer> countMap = new LinkedHashMap<>();
-        Map<String, java.util.Set<Long>> memberMap = new LinkedHashMap<>();
+        Map<String, Map<Long, Integer>> memberCountMap = new LinkedHashMap<>();
         analysisRepository.findByMeetingIdIn(meetingIds).forEach(analysis -> {
-            List<String> keywords = analysis.getBlockerKeywords();
-            if (keywords == null) return;
+            List<String> kws = analysis.getBlockerKeywords();
+            if (kws == null) return;
             Long memberId = memberByMeeting.get(analysis.getMeetingId());
-            keywords.forEach(kw -> {
+            kws.stream().filter(Objects::nonNull).forEach(kw -> {
                 countMap.merge(kw, 1, Integer::sum);
-                memberMap.computeIfAbsent(kw, k -> new java.util.HashSet<>()).add(memberId);
+                memberCountMap.computeIfAbsent(kw, k -> new java.util.HashMap<>())
+                        .merge(memberId, 1, Integer::sum);
             });
         });
-
-        Map<Long, String> nameById = userRepository.findByTeamId(teamId)
-                .stream().collect(Collectors.toMap(User::getId, User::getName));
 
         List<BlockerKeyword> keywords = countMap.entrySet().stream()
                 .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
                 .map(e -> {
-                    java.util.Set<Long> ids = memberMap.getOrDefault(e.getKey(), java.util.Set.of());
-                    List<String> names = ids.stream()
-                            .map(id -> nameById.getOrDefault(id, "멤버#" + id))
-                            .sorted()
+                    Map<Long, Integer> mcMap = memberCountMap.getOrDefault(e.getKey(), Map.of());
+                    List<BlockerKeyword.RelatedMember> relatedMembers = mcMap.entrySet().stream()
+                            .sorted(Map.Entry.<Long, Integer>comparingByValue().reversed())
+                            .map(me -> new BlockerKeyword.RelatedMember(
+                                    me.getKey(),
+                                    memberNameById.getOrDefault(me.getKey(), "알 수 없음"),
+                                    me.getValue()))
                             .toList();
-                    return new BlockerKeyword(e.getKey(), e.getValue(), ids.size(), names);
+                    String guide = e.getValue() >= 3
+                            ? "이번 주 팀 회의에서 '" + e.getKey() + "' 해결 안건을 상정하세요."
+                            : "'" + e.getKey() + "' 관련 멤버와 1on1에서 구체적 원인을 파악하세요.";
+                    return new BlockerKeyword(e.getKey(), e.getValue(), mcMap.size(), relatedMembers, guide);
                 })
                 .toList();
 
@@ -1338,11 +1450,8 @@ public class AnalysisService {
                 .map(kw -> {
                     String severity = kw.count() >= 3 ? "ERROR" : kw.count() == 2 ? "WARNING" : "INFO";
                     String summary = kw.mentionedBy() + "명의 멤버가 총 " + kw.count() + "회 언급";
-                    String guide = kw.count() >= 3
-                            ? "이번 주 팀 회의에서 '" + kw.keyword() + "' 해결 안건을 상정하세요."
-                            : "'" + kw.keyword() + "' 관련 멤버와 1on1에서 구체적 원인을 파악하세요.";
                     return new BlockerPyramidResponse.ActionPrescription(severity,
-                            kw.keyword() + " 반복 언급", summary, guide);
+                            kw.keyword() + " 반복 언급", summary, kw.actionGuide());
                 })
                 .toList();
 
