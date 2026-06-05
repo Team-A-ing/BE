@@ -644,8 +644,9 @@ public class AnalysisService {
         // promises
         PromisesResponse promises = buildPromises(meeting, meetingId);
 
-        HonestyDirection dir = gaps.honestyGap() != null ? computeDirection(gaps.honestyGap().gap()) : null;
-        RiskLevel risk = gaps.honestyGap() != null ? computeRiskLevel(gaps.honestyGap().gap()) : null;
+        Double gap = gaps.honestyGap().gap();
+        HonestyDirection dir = computeDirection(gap);
+        RiskLevel risk = computeRiskLevel(gap);
         String flightRiskLabel = computeFlightRiskLabel(a.getSafetyScore(), dir, risk);
 
         return new AnalysisResultResponse(meetingId, round, member.getName(), member.getJobTitle(),
