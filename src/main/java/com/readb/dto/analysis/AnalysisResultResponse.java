@@ -17,7 +17,8 @@ public record AnalysisResultResponse(
         TalkRatioResponse talkRatio,
         List<FeedbackItem> feedbacks,
         List<ActionPlanItem> nextActionPlans,
-        PromisesResponse promises
+        PromisesResponse promises,
+        MeetingCoaching meetingCoaching
 ) {
     public record GapsResponse(
             AlignmentGapDetail alignmentGap,
@@ -89,4 +90,14 @@ public record AnalysisResultResponse(
             String dueDate,
             String status
     ) {}
+
+    public record MeetingCoaching(
+            GapSummary gapSummary,
+            BehaviorAnalysis behaviorAnalysis,
+            List<String> nextSteps
+    ) {}
+
+    public record GapSummary(String alignment, String honesty, String execution) {}
+
+    public record BehaviorAnalysis(String talkRatio, String speechActTrend) {}
 }

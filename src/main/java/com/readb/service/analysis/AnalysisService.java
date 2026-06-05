@@ -650,14 +650,17 @@ public class AnalysisService {
         // promises
         PromisesResponse promises = buildPromises(meeting, meetingId);
 
-        Double gap = gaps.honestyGap().gap();
+        Double gap = gaps.honestyGap() != null ? gaps.honestyGap().gap() : null;
         HonestyDirection dir = computeDirection(gap);
         RiskLevel risk = computeRiskLevel(gap);
         String flightRiskLabel = computeFlightRiskLabel(a.getSafetyScore(), dir, risk);
 
+        // 미팅 코칭 가이드 (GPT)
+        MeetingCoaching meetingCoaching = buildMeetingCoaching(a, gaps, talkRatio, promises, meeting, meetingId);
+
         return new AnalysisResultResponse(meetingId, round, member.getName(), member.getJobTitle(),
                 meetingDate, durationSec, gaps, a.getSafetyScore(), flightRiskLabel, speechActs,
-                talkRatio, feedbacks, nextActionPlans, promises);
+                talkRatio, feedbacks, nextActionPlans, promises, meetingCoaching);
     }
 
     private GapsResponse buildGaps(Analysis a, Double surveyScore, Meeting meeting) {
@@ -1002,6 +1005,91 @@ public class AnalysisService {
                     evidence, questions);
         } catch (Exception e) {
             log.warn("코칭 가이드 생성 실패. memberId={}", memberId, e);
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private MeetingCoaching buildMeetingCoaching(
+            Analysis a, GapsResponse gaps, TalkRatioResponse talkRatio,
+            PromisesResponse promises, Meeting meeting, Long meetingId) {
+        try {
+            StringBuilder prompt = new StringBuilder("[미팅 분석 코칭 가이드 생성]\n\n");
+
+            // Gap 데이터
+            if (gaps.alignmentGap() != null)
+                prompt.append("Alignment Gap 점수: ").append(gaps.alignmentGap().score())
+                        .append(" — ").append(gaps.alignmentGap().detail()).append("\n");
+            if (gaps.honestyGap() != null)
+                prompt.append("Honesty Gap: ").append(gaps.honestyGap().direction())
+                        .append(", 크기: ").append(gaps.honestyGap().gap())
+                        .append(" (").append(gaps.honestyGap().riskLevel()).append(")\n");
+            if (gaps.executionGap() != null)
+                prompt.append("Execution Gap 점수: ").append(gaps.executionGap().score())
+                        .append(", 총 약속 ").append(gaps.executionGap().totalPromises())
+                        .append("건 중 이행 ").append(gaps.executionGap().fulfilled()).append("건\n");
+
+            // 발화 비율
+            if (talkRatio != null)
+                prompt.append("발화 비율 — 리더: ").append(talkRatio.leaderRatio())
+                        .append("%, 멤버: ").append(talkRatio.memberRatio()).append("%\n");
+
+            // Speech Act
+            Map<String, Object> speechActs = a.getSpeechActs();
+            if (speechActs != null) {
+                prompt.append("Speech Act — 솔직한표현: ").append(listSize(speechActs.get("vulnerability")))
+                        .append("회, 건설적의견: ").append(listSize(speechActs.get("constructiveDissent")))
+                        .append("회, 자발적제안: ").append(listSize(speechActs.get("initiative"))).append("회\n");
+            }
+
+            // 약속 이행
+            if (!promises.previous().isEmpty()) {
+                long fulfilled = promises.previous().stream().filter(p -> "DONE".equals(p.status())).count();
+                prompt.append("이전 약속 이행: ").append(fulfilled).append("/").append(promises.previous().size()).append("건\n");
+            }
+
+            prompt.append("""
+
+                    위 데이터를 바탕으로 리더를 위한 미팅 후 코칭 가이드를 생성하세요.
+                    Fact-Based 원칙: AI 해석 라벨("번아웃 의심", "소극적" 등) 절대 금지. 수치와 관찰 사실만 사용.
+
+                    반드시 아래 JSON 형식으로만 응답하세요:
+                    {
+                      "gapSummary": {
+                        "alignment": "의제 일치도 관련 한 문장 (수치 포함)",
+                        "honesty": "솔직함 간극 관련 한 문장 (수치 포함)",
+                        "execution": "약속 이행 관련 한 문장 (수치 포함)"
+                      },
+                      "behaviorAnalysis": {
+                        "talkRatio": "발화 비율 관련 한 문장 + 제안",
+                        "speechActTrend": "Speech Act 관찰 사실 한 문장"
+                      },
+                      "nextSteps": ["다음 미팅 제안 1", "다음 미팅 제안 2"]
+                    }
+                    """);
+
+            String raw = gptAdapter.chat("당신은 1on1 미팅 분석 전문가입니다.", prompt.toString());
+            Map<String, Object> parsed = parseJson(raw);
+            if (parsed == null) return null;
+
+            Map<String, Object> gapRaw = parsed.get("gapSummary") instanceof Map<?, ?> m ? (Map<String, Object>) m : null;
+            Map<String, Object> behaviorRaw = parsed.get("behaviorAnalysis") instanceof Map<?, ?> m ? (Map<String, Object>) m : null;
+            Object stepsRaw = parsed.get("nextSteps");
+            List<String> nextSteps = stepsRaw instanceof List<?> l
+                    ? l.stream().map(Object::toString).toList() : List.of();
+
+            GapSummary gapSummary = gapRaw == null ? null : new GapSummary(
+                    gapRaw.get("alignment") != null ? gapRaw.get("alignment").toString() : null,
+                    gapRaw.get("honesty") != null ? gapRaw.get("honesty").toString() : null,
+                    gapRaw.get("execution") != null ? gapRaw.get("execution").toString() : null);
+
+            BehaviorAnalysis behaviorAnalysis = behaviorRaw == null ? null : new BehaviorAnalysis(
+                    behaviorRaw.get("talkRatio") != null ? behaviorRaw.get("talkRatio").toString() : null,
+                    behaviorRaw.get("speechActTrend") != null ? behaviorRaw.get("speechActTrend").toString() : null);
+
+            return new MeetingCoaching(gapSummary, behaviorAnalysis, nextSteps);
+        } catch (Exception e) {
+            log.warn("미팅 코칭 가이드 생성 실패. meetingId={}", meetingId, e);
             return null;
         }
     }
