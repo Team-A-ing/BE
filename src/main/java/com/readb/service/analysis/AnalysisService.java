@@ -117,9 +117,12 @@ public class AnalysisService {
               "지연", "문제", "어려움", "기타", "상황" 같은 단일 추상 단어는 절대 포함하지 마세요.
               유사한 의미의 키워드는 하나로 통합하세요 (예: "시간", "효율", "시간 효율" → "시간 효율").
             - promises: "~하겠습니다", "~해드리겠습니다" 등 명확한 이행 의지가 담긴 발언에서 추출.
-              content는 원문 그대로가 아니라 "무엇을 하겠다"는 약속 내용을 한 문장으로 요약하세요.
-              예: "다음 주까지 AWS 접근 권한을 부여하겠습니다" → content: "AWS 접근 권한 부여"
-              owner는 약속한 사람 (leader 또는 member)
+              반드시 "누가 + 무엇을" 구조로 추출하세요.
+              content: "무엇을 하겠다"는 약속 내용을 한 문장으로 요약 (원문 그대로 금지)
+              context: 이 약속이 나온 대화 맥락을 1문장으로 요약
+                예) "제가 만들어 볼게요" 앞에서 "테스트 체크리스트" 논의 → context: "QA 테스트 체크리스트 논의 중 자발적 제안"
+              "제가 해볼게요"처럼 대상이 불명확하면 앞뒤 맥락에서 대상을 추론하여 content에 보충하세요.
+              owner: 약속한 사람 (leader 또는 member)
 
             [Few-shot 예시]
 
@@ -153,7 +156,7 @@ public class AnalysisService {
               "talkRatio": {"leaderRatio": 숫자, "memberRatio": 숫자},
               "topics": ["주제1", "주제2"],
               "blockerKeywords": ["키워드1", "키워드2"],
-              "promises": [{"content": "약속 내용", "owner": "leader 또는 member"}]
+              "promises": [{"content": "약속 내용", "context": "약속 맥락 1문장", "owner": "leader 또는 member"}]
             }
             """;
 
@@ -491,10 +494,13 @@ public class AnalysisService {
             String owner = String.valueOf(p.get("owner"));
             Long ownerId = "leader".equals(owner) ? meeting.getLeaderId() : meeting.getMemberId();
             String content = String.valueOf(p.get("content"));
+            Object ctxObj = p.get("context");
+            String context = ctxObj != null ? ctxObj.toString() : null;
             promiseRepository.save(Promise.builder()
                     .meetingId(meetingId)
                     .ownerId(ownerId)
                     .content(content)
+                    .context(context)
                     .build());
         }
     }
@@ -741,12 +747,12 @@ public class AnalysisService {
                         meeting.getLeaderId(), meeting.getMemberId(), meetingId);
         List<PreviousPromise> previous = prevMeeting.isEmpty() ? List.of()
                 : promiseRepository.findByMeetingId(prevMeeting.get().getId()).stream()
-                        .map(p -> new PreviousPromise(p.getId(), p.getContent(), p.getStatus().name()))
+                        .map(p -> new PreviousPromise(p.getId(), p.getContent(), p.getContext(), p.getStatus().name()))
                         .toList();
 
         // new: 현재 미팅의 약속
         List<NewPromise> newPromises = promiseRepository.findByMeetingId(meetingId).stream()
-                .map(p -> new NewPromise(p.getId(), p.getContent(), p.getCategory(),
+                .map(p -> new NewPromise(p.getId(), p.getContent(), p.getContext(), p.getCategory(),
                         p.getDeadline() != null ? p.getDeadline().toString() : null,
                         p.getStatus().name()))
                 .toList();

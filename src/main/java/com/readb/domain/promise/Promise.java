@@ -28,6 +28,9 @@ public class Promise {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    @Column(columnDefinition = "TEXT")
+    private String context;
+
     @Column(length = 50)
     private String category;
 
