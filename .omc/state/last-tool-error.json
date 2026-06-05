@@ -1,0 +1,7 @@
+{
+  "tool_name": "Read",
+  "tool_input_preview": "{\"file_path\":\"D:\\\\projects\\\\readB\\\\BE\\\\src\\\\main\\\\java\\\\com\\\\readb\\\\domain\\\\meeting\"}",
+  "error": "EISDIR: illegal operation on a directory, read 'D:\\projects\\readB\\BE\\src\\main\\java\\com\\readb\\domain\\meeting'",
+  "timestamp": "2026-06-05T11:06:30.649Z",
+  "retry_count": 1
+}

@@ -35,7 +35,11 @@ public class AudioAnalyzer {
             pb.redirectErrorStream(true);
             Process p = pb.start();
             p.getInputStream().transferTo(OutputStream.nullOutputStream());
-            p.waitFor();
+            boolean finished = p.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
+            if (!finished) {
+                p.destroyForcibly();
+                throw new IOException("FFmpeg timed out after 60 seconds");
+            }
             return Files.readAllBytes(output);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

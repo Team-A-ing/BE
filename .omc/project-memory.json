@@ -1,0 +1,400 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1780046166708,
+  "projectRoot": "D:\\projects\\readB\\BE",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Java/Kotlin",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "build.gradle"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "gradle",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "src"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "build": {
+      "path": "build",
+      "purpose": "Build output",
+      "fileCount": 1,
+      "lastAccessed": 1780046166594,
+      "keyFiles": [
+        "resolvedMainClassName"
+      ]
+    },
+    "db": {
+      "path": "db",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1780046166596,
+      "keyFiles": [
+        "schema.sql"
+      ]
+    },
+    "gradle": {
+      "path": "gradle",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1780046166597,
+      "keyFiles": []
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 0,
+      "lastAccessed": 1780046166616,
+      "keyFiles": []
+    },
+    "db\\migrations": {
+      "path": "db\\migrations",
+      "purpose": "Database migrations",
+      "fileCount": 3,
+      "lastAccessed": 1780046166630,
+      "keyFiles": [
+        "2026-05-06_status_check_and_index.sql",
+        "2026-05-18_add_scheduled_at_to_meetings.sql",
+        "2026-05-18_meeting_stt_pipeline.sql"
+      ]
+    },
+    "src\\test": {
+      "path": "src\\test",
+      "purpose": "Test files",
+      "fileCount": 0,
+      "lastAccessed": 1780046166635,
+      "keyFiles": []
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src\\main\\java\\com\\readb\\service\\analysis\\AnalysisService.java",
+      "accessCount": 24,
+      "lastAccessed": 1780658441767,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\resources\\application-local.yml",
+      "accessCount": 17,
+      "lastAccessed": 1780050945424,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\resources\\application.yml",
+      "accessCount": 9,
+      "lastAccessed": 1780047711896,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\service\\analysis\\PromiseService.java",
+      "accessCount": 9,
+      "lastAccessed": 1780657686919,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\service\\meeting\\MeetingService.java",
+      "accessCount": 8,
+      "lastAccessed": 1780050295494,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\controller\\MeetingController.java",
+      "accessCount": 8,
+      "lastAccessed": 1780050415594,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\domain\\user\\User.java",
+      "accessCount": 7,
+      "lastAccessed": 1780657604276,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\repository\\MeetingRepository.java",
+      "accessCount": 7,
+      "lastAccessed": 1780657630363,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\config\\SecurityConfig.java",
+      "accessCount": 6,
+      "lastAccessed": 1779621444340,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\controller\\AuthController.java",
+      "accessCount": 6,
+      "lastAccessed": 1780046883830,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\service\\auth\\AuthService.java",
+      "accessCount": 5,
+      "lastAccessed": 1779099773288,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\domain\\meeting\\Meeting.java",
+      "accessCount": 5,
+      "lastAccessed": 1780657604199,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\dto\\auth\\SignupRequest.java",
+      "accessCount": 4,
+      "lastAccessed": 1779102595561,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\config\\CorsConfig.java",
+      "accessCount": 4,
+      "lastAccessed": 1779587172281,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\domain\\team\\Team.java",
+      "accessCount": 4,
+      "lastAccessed": 1780046341218,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\repository\\UserRepository.java",
+      "accessCount": 4,
+      "lastAccessed": 1780658417681,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\domain\\recording\\Recording.java",
+      "accessCount": 4,
+      "lastAccessed": 1780658966032,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\dto\\auth\\LoginResponse.java",
+      "accessCount": 3,
+      "lastAccessed": 1779099737874,
+      "type": "file"
+    },
+    {
+      "path": "src\\test\\resources\\application-test.yml",
+      "accessCount": 3,
+      "lastAccessed": 1779100500974,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\service\\user\\UserService.java",
+      "accessCount": 3,
+      "lastAccessed": 1779620789415,
+      "type": "file"
+    },
+    {
+      "path": "db\\schema.sql",
+      "accessCount": 3,
+      "lastAccessed": 1779620798130,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\resources\\application-prod.yml",
+      "accessCount": 3,
+      "lastAccessed": 1780047698715,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\common\\exception\\ErrorCode.java",
+      "accessCount": 3,
+      "lastAccessed": 1780642952679,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\common\\response\\ApiResponse.java",
+      "accessCount": 3,
+      "lastAccessed": 1780642952812,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\domain\\analysis\\Analysis.java",
+      "accessCount": 3,
+      "lastAccessed": 1780642985476,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\domain\\promise\\Promise.java",
+      "accessCount": 3,
+      "lastAccessed": 1780657588451,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\security\\JwtAuthFilter.java",
+      "accessCount": 2,
+      "lastAccessed": 1779100375743,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\common\\util\\JwtUtil.java",
+      "accessCount": 2,
+      "lastAccessed": 1779100375779,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 2,
+      "lastAccessed": 1779100384701,
+      "type": "directory"
+    },
+    {
+      "path": "C:\\Users\\82109\\.claude.json",
+      "accessCount": 2,
+      "lastAccessed": 1779102317737,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\dto\\auth\\LoginRequest.java",
+      "accessCount": 2,
+      "lastAccessed": 1779102595680,
+      "type": "file"
+    },
+    {
+      "path": "C:\\Users\\82109\\.claude\\projects\\D--projects-BE\\memory\\MEMORY.md",
+      "accessCount": 2,
+      "lastAccessed": 1779105975124,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\dto\\meeting\\MeetingCreateRequest.java",
+      "accessCount": 2,
+      "lastAccessed": 1779107278085,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\dto\\user\\UserProfileResponse.java",
+      "accessCount": 2,
+      "lastAccessed": 1779277084383,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\domain\\user\\UserRole.java",
+      "accessCount": 2,
+      "lastAccessed": 1779620810053,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\repository\\RecordingRepository.java",
+      "accessCount": 2,
+      "lastAccessed": 1779620810601,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java",
+      "accessCount": 2,
+      "lastAccessed": 1779621371663,
+      "type": "directory"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\service\\analysis\\AnalysisOrchestrator.java",
+      "accessCount": 2,
+      "lastAccessed": 1780050302575,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\domain\\survey\\Survey.java",
+      "accessCount": 2,
+      "lastAccessed": 1780657920115,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\dto\\auth\\TokenRefreshRequest.java",
+      "accessCount": 1,
+      "lastAccessed": 1779099592243,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\dto\\auth\\TokenRefreshResponse.java",
+      "accessCount": 1,
+      "lastAccessed": 1779099592796,
+      "type": "file"
+    },
+    {
+      "path": "src\\test\\java\\com\\readb\\ReadbApplicationTests.java",
+      "accessCount": 1,
+      "lastAccessed": 1779100388719,
+      "type": "file"
+    },
+    {
+      "path": "docs\\superpowers\\specs\\2026-05-18-supabase-mcp-local-auth-test-design.md",
+      "accessCount": 1,
+      "lastAccessed": 1779101564185,
+      "type": "file"
+    },
+    {
+      "path": "C:\\Users\\82109\\.claude\\settings.json",
+      "accessCount": 1,
+      "lastAccessed": 1779102133958,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\config\\SwaggerConfig.java",
+      "accessCount": 1,
+      "lastAccessed": 1779103085108,
+      "type": "file"
+    },
+    {
+      "path": "C:\\Users\\82109\\.claude\\projects\\D--projects-BE\\memory\\project_supabase_connection.md",
+      "accessCount": 1,
+      "lastAccessed": 1779105955252,
+      "type": "file"
+    },
+    {
+      "path": "src\\main\\java\\com\\readb\\dto\\meeting\\MeetingDetailResponse.java",
+      "accessCount": 1,
+      "lastAccessed": 1779106464724,
+      "type": "file"
+    },
+    {
+      "path": "db\\migrations\\2026-05-18_add_scheduled_at_to_meetings.sql",
+      "accessCount": 1,
+      "lastAccessed": 1779107298296,
+      "type": "file"
+    },
+    {
+      "path": "Procfile",
+      "accessCount": 1,
+      "lastAccessed": 1779276529288,
+      "type": "file"
+    },
+    {
+      "path": "db\\migrations\\2026-05-20_add_invite_code_to_teams.sql",
+      "accessCount": 1,
+      "lastAccessed": 1779277048050,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}
