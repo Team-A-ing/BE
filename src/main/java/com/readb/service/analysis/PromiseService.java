@@ -5,7 +5,9 @@ import com.readb.common.exception.ErrorCode;
 import com.readb.domain.meeting.Meeting;
 import com.readb.domain.promise.Promise;
 import com.readb.domain.promise.PromiseStatus;
+import com.readb.domain.user.User;
 import com.readb.dto.promise.FulfillmentRateResponse;
+import com.readb.dto.promise.OverduePromiseResponse;
 import com.readb.repository.MeetingRepository;
 import com.readb.repository.PromiseRepository;
 import com.readb.repository.UserRepository;
@@ -58,5 +60,33 @@ public class PromiseService {
 
     private double round(int count, int total) {
         return Math.round((double) count / total * 1000) / 10.0;
+    }
+
+    @Transactional(readOnly = true)
+    public List<OverduePromiseResponse> getOverduePromises(Long userId, Long memberId) {
+        if (!userRepository.existsById(memberId)) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+        if (!userRepository.findById(userId).map(u -> u.getTeamId().equals(userRepository.findById(memberId).map(m -> m.getTeamId()).orElse(null))).orElse(false)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+
+        String memberName = userRepository.findById(memberId).map(User::getName).orElse("");
+        List<Promise> promises = promiseRepository.findByOwnerIdAndStatusOrderByCreatedAtDesc(memberId, PromiseStatus.PENDING);
+
+        return promises.stream().map(p -> {
+            Meeting meeting = meetingRepository.findById(p.getMeetingId()).orElse(null);
+            int round = meeting == null ? 0 : (int) meetingRepository.countByLeaderIdAndMemberIdAndIdLessThanEqual(
+                    meeting.getLeaderId(), meeting.getMemberId(), meeting.getId());
+            return new OverduePromiseResponse(
+                    p.getId().intValue(),
+                    p.getContent(),
+                    p.getCategory(),
+                    p.getDeadline() != null ? p.getDeadline().toString() : null,
+                    p.getStatus().name(),
+                    round,
+                    memberName
+            );
+        }).toList();
     }
 }

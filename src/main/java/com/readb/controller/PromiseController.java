@@ -3,6 +3,7 @@ package com.readb.controller;
 import com.readb.common.response.ApiResponse;
 import com.readb.domain.promise.Promise;
 import com.readb.dto.promise.FulfillmentRateResponse;
+import com.readb.dto.promise.OverduePromiseResponse;
 import com.readb.service.analysis.PromiseService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -29,4 +30,12 @@ public class PromiseController {
             @AuthenticationPrincipal Long userId) {
         return ApiResponse.ok(promiseService.getFulfillmentRate(userId));
     }
+
+    @GetMapping("/overdue")
+    public ApiResponse<List<OverduePromiseResponse>> getOverduePromises(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam Long memberId) {
+        return ApiResponse.ok(promiseService.getOverduePromises(userId, memberId));
+    }
+
 }
