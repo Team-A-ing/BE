@@ -3,7 +3,7 @@ public record OverduePromiseResponse (
             Long promiseId,
             String content,
             String category,
-            String dueDate,
+            String deadline,
             String status,
             int fromMeetingRound,
             String memberName
