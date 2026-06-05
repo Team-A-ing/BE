@@ -27,7 +27,7 @@ public class ActionPlanController {
             @AuthenticationPrincipal Long userId) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
-        if (!meeting.getLeaderId().equals(userId) && !meeting.getMemberId().equals(userId)) {
+        if (!java.util.Objects.equals(meeting.getLeaderId(), userId) && !java.util.Objects.equals(meeting.getMemberId(), userId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
         return ApiResponse.ok(actionPlanRepository.findByMeetingIdOrderByIdAsc(meetingId));
