@@ -1127,10 +1127,19 @@ public class AnalysisService {
             });
         });
 
+        Map<Long, String> nameById = userRepository.findByTeamId(teamId)
+                .stream().collect(Collectors.toMap(User::getId, User::getName));
+
         List<BlockerKeyword> keywords = countMap.entrySet().stream()
                 .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                .map(e -> new BlockerKeyword(e.getKey(), e.getValue(),
-                        memberMap.getOrDefault(e.getKey(), java.util.Set.of()).size()))
+                .map(e -> {
+                    java.util.Set<Long> ids = memberMap.getOrDefault(e.getKey(), java.util.Set.of());
+                    List<String> names = ids.stream()
+                            .map(id -> nameById.getOrDefault(id, "멤버#" + id))
+                            .sorted()
+                            .toList();
+                    return new BlockerKeyword(e.getKey(), e.getValue(), ids.size(), names);
+                })
                 .toList();
 
         List<BlockerPyramidResponse.ActionPrescription> prescriptions = keywords.stream()
