@@ -9,5 +9,6 @@ public record RadarDataPoint(
         Double safetyScore,
         Double honestyGap,
         HonestyDirection direction,
-        RiskLevel riskLevel
+        RiskLevel riskLevel,
+        String flightRiskLabel
 ) {}

@@ -246,7 +246,8 @@ public class AnalysisService {
             멤버 발화에서 다음 유형의 성과/기여를 발견하면 추출하세요 (없으면 빈 배열 []):
             - ACHIEVEMENT: 완료된 목표, 결과물, 성과 (수치 있으면 반드시 포함)
               예) "배포 파이프라인 구축 완료해서 배포 시간 30분 → 5분으로 줄였어요"
-            - PROPOSAL_ADOPTED: 제안이 팀/리더에게 채택된 경우
+            - ACHIEVEMENT: 완료된 목표, 결과물, 제안 채택 포함 (수치 있으면 반드시 포함)
+              예) "배포 파이프라인 구축 완료해서 배포 시간 30분 → 5분으로 줄였어요"
               예) "제가 제안한 공통 컴포넌트 방식 팀에서 도입하기로 했어요"
             - GROWTH: 새로운 기술 습득, 역량 확장
               예) "이번에 처음으로 인프라 쪽 공부하면서 k8s 설정 직접 해봤어요"
@@ -550,24 +551,18 @@ public class AnalysisService {
         }
     }
 
+    // VDI 기반 surveyScore: safetyScore와 동일 차원(0~100)으로 산출
+    // V(1~5)→max 40, D(1~5)→max 35, I(1~5)→max 25
     private Double computeSurveyScore(Map<String, Object> scores) {
         if (scores == null) return null;
-        Object energyObj = scores.get("energyLevel");
-        if (energyObj == null) return null;
-        double base = ((Number) energyObj).doubleValue() * 20.0;
-        double adj = 0;
-        Object issuesObj = scores.get("issues");
-        if (issuesObj instanceof List<?> issues) {
-            for (Object issue : issues) {
-                adj += switch (issue.toString()) {
-                    case "업무 블로커" -> -10;
-                    case "리소스 요청" -> -5;
-                    case "팀 분위기", "프로세스 개선" -> -3;
-                    default -> 0;
-                };
-            }
-        }
-        return Math.max(0, Math.min(100, base + adj));
+        Object vObj = scores.get("vulnerabilityLevel");
+        Object dObj = scores.get("dissentLevel");
+        Object iObj = scores.get("initiativeLevel");
+        if (vObj == null || dObj == null || iObj == null) return null;
+        double v = ((Number) vObj).doubleValue() * 8.0;   // max 40
+        double d = ((Number) dObj).doubleValue() * 7.0;   // max 35
+        double i = ((Number) iObj).doubleValue() * 5.0;   // max 25
+        return Math.max(0, Math.min(100, v + d + i));
     }
 
     private Double toDouble(Object val) {
@@ -579,6 +574,17 @@ public class AnalysisService {
     private static Double clamp(Double val, double min, double max) {
         if (val == null) return null;
         return Math.max(min, Math.min(max, val));
+    }
+
+    private static String computeFlightRiskLabel(Double safetyScore, HonestyDirection direction, RiskLevel riskLevel) {
+        if (safetyScore == null) return null;
+        if (direction == HonestyDirection.OVERREPORT) {
+            if (riskLevel == RiskLevel.DANGER)  return "이탈 위험 높음";
+            if (riskLevel == RiskLevel.WARNING) return "이탈 위험 주의";
+        }
+        if (safetyScore < 30) return "관찰 필요";
+        if (safetyScore < 60) return "안정";
+        return "적극적 참여";
     }
 
     private static HonestyDirection computeDirection(Double honestyGap) {
@@ -638,8 +644,13 @@ public class AnalysisService {
         // promises
         PromisesResponse promises = buildPromises(meeting, meetingId);
 
+        Double gap = gaps.honestyGap().gap();
+        HonestyDirection dir = computeDirection(gap);
+        RiskLevel risk = computeRiskLevel(gap);
+        String flightRiskLabel = computeFlightRiskLabel(a.getSafetyScore(), dir, risk);
+
         return new AnalysisResultResponse(meetingId, round, member.getName(), member.getJobTitle(),
-                meetingDate, durationSec, gaps, a.getSafetyScore(), speechActs,
+                meetingDate, durationSec, gaps, a.getSafetyScore(), flightRiskLabel, speechActs,
                 talkRatio, feedbacks, nextActionPlans, promises);
     }
 
@@ -1030,8 +1041,10 @@ public class AnalysisService {
                     : null;
 
             User member = userById.get(memberId);
+            HonestyDirection dir = computeDirection(honestyGap);
+            RiskLevel risk = computeRiskLevel(honestyGap);
             result.add(new RadarDataPoint(memberId, member.getName(), surveyScore, safetyScore, honestyGap,
-                    computeDirection(honestyGap), computeRiskLevel(honestyGap)));
+                    dir, risk, computeFlightRiskLabel(safetyScore, dir, risk)));
         }
         return result;
     }
@@ -1253,8 +1266,7 @@ public class AnalysisService {
         int achievementCount = (int) events.stream()
                 .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT).count();
         int leaderEndorsementCount = (int) events.stream()
-                .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT
-                        || e.getEventType() == CareerEventType.PROPOSAL_ADOPTED).count();
+                .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT).count();
 
         int contributionPercentile = computeContributionPercentile(memberId, member.getTeamId());
 
