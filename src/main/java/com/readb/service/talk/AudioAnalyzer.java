@@ -32,13 +32,16 @@ public class AudioAnalyzer {
                 "-f", "s16le", "-ar", "16000", "-ac", "1",
                 output.toString()
             );
-            pb.redirectErrorStream(true);
+            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
             Process p = pb.start();
-            p.getInputStream().transferTo(OutputStream.nullOutputStream());
             boolean finished = p.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
             if (!finished) {
                 p.destroyForcibly();
                 throw new IOException("FFmpeg timed out after 60 seconds");
+            }
+            if (p.exitValue() != 0) {
+                throw new IOException("FFmpeg failed with exit code " + p.exitValue());
             }
             return Files.readAllBytes(output);
         } catch (InterruptedException e) {

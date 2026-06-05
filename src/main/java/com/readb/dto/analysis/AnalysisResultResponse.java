@@ -17,7 +17,8 @@ public record AnalysisResultResponse(
         TalkRatioResponse talkRatio,
         List<FeedbackItem> feedbacks,
         List<ActionPlanItem> nextActionPlans,
-        PromisesResponse promises
+        PromisesResponse promises,
+        MeetingCoaching meetingCoaching
 ) {
     public record GapsResponse(
             AlignmentGapDetail alignmentGap,
@@ -79,13 +80,24 @@ public record AnalysisResultResponse(
             @JsonProperty("new") List<NewPromise> newPromises
     ) {}
 
-    public record PreviousPromise(Long promiseId, String content, String status) {}
+    public record PreviousPromise(Long promiseId, String content, String context, String status) {}
 
     public record NewPromise(
             Long promiseId,
             String content,
+            String context,
             String category,
             String dueDate,
             String status
     ) {}
+
+    public record MeetingCoaching(
+            GapSummary gapSummary,
+            BehaviorAnalysis behaviorAnalysis,
+            List<String> nextSteps
+    ) {}
+
+    public record GapSummary(String alignment, String honesty, String execution) {}
+
+    public record BehaviorAnalysis(String talkRatio, String speechActTrend) {}
 }
