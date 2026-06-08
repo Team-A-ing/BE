@@ -24,6 +24,7 @@ import com.readb.dto.analysis.RiskLevel;
 import com.readb.dto.analysis.SpeechTrendResponse;
 import com.readb.dto.team.TeamCoachingResponse;
 import com.readb.dto.team.TeamDashboardResponse;
+import com.readb.dto.team.TeamPromiseSummaryResponse;
 import com.readb.domain.user.User;
 import com.readb.domain.actionplan.ActionPlan;
 import com.readb.domain.career.CareerEvent;
@@ -38,8 +39,10 @@ import com.readb.repository.MeetingRepository;
 import com.readb.repository.PromiseRepository;
 import com.readb.repository.RecordingRepository;
 import com.readb.repository.SurveyRepository;
+import com.readb.repository.TeamCoachingCacheRepository;
 import com.readb.repository.TeamRepository;
 import com.readb.repository.UserRepository;
+import com.readb.domain.team.TeamCoachingCache;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -271,6 +274,7 @@ public class AnalysisService {
     private final CareerEventRepository careerEventRepository;
     private final TeamRepository teamRepository;
     private final ActionPlanRepository actionPlanRepository;
+    private final TeamCoachingCacheRepository teamCoachingCacheRepository;
     private final LlmAdapter gptAdapter;
     private final LlmAdapter claudeAdapter;
     private final ObjectMapper objectMapper;
@@ -286,6 +290,7 @@ public class AnalysisService {
             CareerEventRepository careerEventRepository,
             TeamRepository teamRepository,
             ActionPlanRepository actionPlanRepository,
+            TeamCoachingCacheRepository teamCoachingCacheRepository,
             @Qualifier("gptMiniAdapter") LlmAdapter gptAdapter,
             @Qualifier("claudeAdapter") LlmAdapter claudeAdapter,
             ObjectMapper objectMapper,
@@ -299,6 +304,7 @@ public class AnalysisService {
         this.careerEventRepository = careerEventRepository;
         this.teamRepository = teamRepository;
         this.actionPlanRepository = actionPlanRepository;
+        this.teamCoachingCacheRepository = teamCoachingCacheRepository;
         this.gptAdapter = gptAdapter;
         this.claudeAdapter = claudeAdapter;
         this.objectMapper = objectMapper;
@@ -1247,7 +1253,8 @@ public class AnalysisService {
         return result;
     }
 
-    @Transactional(readOnly = true)
+    // @Transactional 미적용: 내부에서 외부 LLM API를 호출하므로 DB 커넥션을 길게 점유하지 않도록
+    // 조회/캐시 확인은 트랜잭션 없이 수행하고, 캐시 저장만 TransactionTemplate으로 짧게 처리한다.
     public TeamCoachingResponse getTeamCoaching(Long teamId, Long leaderId) {
         // ① IDOR 방어: 요청자가 해당 팀의 리더인지 검증
         teamRepository.findById(teamId).ifPresent(team -> {
@@ -1281,12 +1288,14 @@ public class AnalysisService {
         prompt.append("[멤버별 최신 미팅 분석]\n");
 
         List<String> memberSummaries = new ArrayList<>();
+        List<Long> usedMeetingIds = new ArrayList<>();
         for (Map.Entry<Long, Long> entry : latestMeetingIdByMember.entrySet()) {
 
             Long memberId = entry.getKey();
             Long meetingId = entry.getValue();
             Analysis a = analysisByMeetingId.get(meetingId);
             if (a == null) continue;
+            usedMeetingIds.add(meetingId);
 
             User member = userById.get(memberId);
             Map<String, Object> acts = a.getSpeechActs();
@@ -1304,26 +1313,54 @@ public class AnalysisService {
         // ③ 빈 데이터 조기 반환 — 분석 완료 미팅 없으면 GPT 호출 불필요
         if (memberSummaries.isEmpty()) return new TeamCoachingResponse("분석 완료된 미팅 데이터가 없습니다.", List.of(), List.of());
 
+        // 캐시 확인: 입력(분석에 사용된 미팅 집합)이 동일하면 기존 코칭을 그대로 반환하여
+        // 새 미팅이 없을 때 매 요청마다 GPT 호출로 결과가 달라지는 것을 방지한다.
+        String signature = usedMeetingIds.stream().sorted()
+                .map(String::valueOf).collect(Collectors.joining(","));
+        TeamCoachingCache cached = teamCoachingCacheRepository.findById(teamId).orElse(null);
+        if (cached != null && signature.equals(cached.getSignature())) {
+            try {
+                return objectMapper.readValue(cached.getPayload(), TeamCoachingResponse.class);
+            } catch (Exception e) {
+                log.warn("팀 코칭 캐시 역직렬화 실패, 재생성합니다. teamId={}", teamId, e);
+            }
+        }
+
         memberSummaries.forEach(s -> prompt.append(s).append("\n"));
 
         prompt.append("""
 
                 위 팀 데이터를 바탕으로 리더를 위한 팀 코칭 가이드를 생성하세요.
-                Fact-Based 원칙: 수치와 관찰 사실만 사용. "번아웃 의심" 등 AI 해석 라벨 금지.
+
+                [출력 원칙 — 매우 중요]
+                - Fact-Based 원칙 유지: 모든 서술은 관찰된 행동·발언·대화 패턴 등 '사실'에 근거하세요.
+                  근거 없는 추측이나 "번아웃", "이직 위험" 같은 단정적 진단 라벨은 금지합니다.
+                - 단, SafetyScore, HonestyGap, V/D/I, 점수, 숫자 등 내부 지표 용어·수치는 절대 출력에 노출하지 마세요.
+                  리더와 팀원은 이 용어를 이해하지 못합니다. 수치는 판단의 '근거'로만 활용하고, 표현에는 쓰지 마세요.
+                - 내부 지표가 의미하는 '팀원의 상태'를 관찰된 사실 기반의 일상 언어로 바꿔 설명하세요.
+                  · SafetyScore 낮음 → "솔직한 의견이나 우려를 편하게 꺼내지 못하는 분위기"
+                  · HonestyGap 큰 양(+) → "스스로는 괜찮다고 말하지만 실제 대화에서는 속마음을 잘 드러내지 않음"
+                  · HonestyGap 큰 음(-) → "실제로는 적극적으로 의견을 내지만 스스로를 과소평가함"
+                  · V/D/I 낮음 → "질문·반대 의견·먼저 나서는 발언이 거의 없음"
+                - suggestedActions는 리더가 이번 주에 바로 실행할 수 있는 구체적 행동으로 작성하세요.
+                  무엇을·누구에게·어떻게 할지가 드러나야 합니다.
+                  ("관심을 가지세요", "지원하세요" 같은 추상적 표현 금지 / 예: "오멤버와 30분 1:1을 잡아
+                  최근 맡은 업무에서 부담되는 부분이 무엇인지 먼저 물어보고, 리더가 덜어줄 수 있는 일을 1가지 정하세요.")
+
                 insights의 type은 반드시 ATTENTION(주의) 또는 POSITIVE(긍정) 중 하나.
                 relatedMemberId는 언급된 멤버의 id(숫자)로 반환하세요.
 
                 반드시 아래 JSON 형식으로만 응답하세요:
                 {
-                  "overallAssessment": "팀 전체 상태 요약 1문장 (수치 포함)",
+                  "overallAssessment": "팀 전체 소통 상태를 일상 언어로 설명한 1~2문장 (지표 용어·숫자 금지)",
                   "insights": [
                     {
                       "type": "ATTENTION",
-                      "content": "관찰 사실 1문장 (수치 포함)",
+                      "content": "특정 멤버의 상태를 일상 언어로 설명한 1문장 (지표 용어·숫자 금지)",
                       "relatedMemberId": 멤버id숫자
                     }
                   ],
-                  "suggestedActions": ["리더 제안 액션 1", "리더 제안 액션 2"]
+                  "suggestedActions": ["이번 주 실행 가능한 구체적 행동 1", "구체적 행동 2"]
                 }
                 """);
 
@@ -1361,7 +1398,26 @@ public class AnalysisService {
             String assessment = parsed.get("overallAssessment") != null
                     ? parsed.get("overallAssessment").toString() : null;
 
-            return new TeamCoachingResponse(assessment, insights, actions);
+            TeamCoachingResponse response = new TeamCoachingResponse(assessment, insights, actions);
+
+            // 동일 입력에 대해 다음 요청부터 재사용하도록 캐시에 저장 (짧은 쓰기 트랜잭션)
+            try {
+                String payload = objectMapper.writeValueAsString(response);
+                transactionTemplate.executeWithoutResult(status -> {
+                    TeamCoachingCache entity = teamCoachingCacheRepository.findById(teamId).orElse(null);
+                    if (entity == null) {
+                        teamCoachingCacheRepository.save(TeamCoachingCache.builder()
+                                .teamId(teamId).signature(signature).payload(payload).build());
+                    } else {
+                        entity.update(signature, payload);
+                        teamCoachingCacheRepository.save(entity);
+                    }
+                });
+            } catch (Exception e) {
+                log.warn("팀 코칭 캐시 저장 실패. teamId={}", teamId, e);
+            }
+
+            return response;
         } catch (Exception e) {
             log.warn("팀 코칭 가이드 생성 실패. teamId={}", teamId, e);
             return null;
@@ -1702,6 +1758,84 @@ public class AnalysisService {
             map.put(ascending.get(i).getId(), i + 1);
         }
         return map;
+    }
+
+    @Transactional(readOnly = true)
+    public TeamPromiseSummaryResponse getTeamPromiseSummary(Long teamId) {
+        List<User> members = userRepository.findByTeamId(teamId).stream()
+                .filter(u -> u.getRole() == UserRole.MEMBER)
+                .toList();
+        if (members.isEmpty()) {
+            return new TeamPromiseSummaryResponse(List.of());
+        }
+
+        List<Long> memberIds = members.stream().map(User::getId).toList();
+
+        List<Promise> allPromises = promiseRepository.findByOwnerIdIn(memberIds);
+        Map<Long, List<Promise>> byMember = allPromises.stream()
+                .collect(Collectors.groupingBy(Promise::getOwnerId));
+
+        // 회차 계산: 멤버별 전체 미팅을 1번에 조회해 메모리에서 id 순서대로 round 부여 (N+1 제거).
+        // 1:1 미팅은 멤버당 단일 리더이므로 멤버별 그룹핑이 (리더, 멤버) 쌍과 동일하다.
+        Map<Long, Integer> roundByMeetingId = new java.util.HashMap<>();
+        meetingRepository.findByMemberIdInOrderByCreatedAtDesc(memberIds).stream()
+                .collect(Collectors.groupingBy(Meeting::getMemberId))
+                .values()
+                .forEach(meetingsOfMember -> {
+                    meetingsOfMember.sort(java.util.Comparator.comparing(Meeting::getId));
+                    for (int i = 0; i < meetingsOfMember.size(); i++) {
+                        roundByMeetingId.put(meetingsOfMember.get(i).getId(), i + 1);
+                    }
+                });
+
+        List<TeamPromiseSummaryResponse.MemberPromiseSummary> memberSummaries = members.stream()
+                .filter(m -> byMember.containsKey(m.getId()))
+                .map(member -> {
+                    List<Promise> promises = byMember.get(member.getId());
+                    long completed = promises.stream().filter(p -> p.getStatus() == PromiseStatus.DONE).count();
+                    long pending = promises.stream().filter(p -> p.getStatus() == PromiseStatus.PENDING).count();
+                    long overdue = promises.stream().filter(p -> p.getStatus() == PromiseStatus.MISSED).count();
+
+                    LocalDate today = LocalDate.now();
+                    // 미이행(PENDING/MISSED)은 항상 표시, 오늘 완료한 약속은 체크된 상태로 당일까지 유지
+                    List<TeamPromiseSummaryResponse.PromiseSummaryItem> items = promises.stream()
+                            .filter(p -> p.getStatus() == PromiseStatus.PENDING
+                                    || p.getStatus() == PromiseStatus.MISSED
+                                    || (p.getStatus() == PromiseStatus.DONE
+                                        && p.getCompletedAt() != null
+                                        && p.getCompletedAt().toLocalDate().isEqual(today)))
+                            .map(p -> {
+                                boolean isCompleted = p.getStatus() == PromiseStatus.DONE;
+                                String status = isCompleted ? "PENDING"
+                                        : (p.getStatus() == PromiseStatus.MISSED ? "OVERDUE" : "PENDING");
+                                return new TeamPromiseSummaryResponse.PromiseSummaryItem(
+                                        String.valueOf(p.getId()),
+                                        p.getContent(),
+                                        p.getContext(),
+                                        status,
+                                        p.getCreatedAt() != null ? p.getCreatedAt().toLocalDate().toString() : null,
+                                        roundByMeetingId.getOrDefault(p.getMeetingId(), 0),
+                                        isCompleted
+                                );
+                            })
+                            // 미완료를 위로, 완료된 항목을 아래로 정렬
+                            .sorted(java.util.Comparator.comparing(TeamPromiseSummaryResponse.PromiseSummaryItem::isCompleted))
+                            .toList();
+
+                    if (items.isEmpty()) return null;
+
+                    return new TeamPromiseSummaryResponse.MemberPromiseSummary(
+                            String.valueOf(member.getId()),
+                            member.getName(),
+                            items,
+                            new TeamPromiseSummaryResponse.Stats(
+                                    promises.size(), (int) completed, (int) pending, (int) overdue)
+                    );
+                })
+                .filter(Objects::nonNull)
+                .toList();
+
+        return new TeamPromiseSummaryResponse(memberSummaries);
     }
 
     private CareerTimelineResponse toTimelineResponse(CareerEvent e, Map<Long, Integer> roundByMeetingId) {

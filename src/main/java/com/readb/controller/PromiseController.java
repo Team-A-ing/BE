@@ -38,4 +38,12 @@ public class PromiseController {
         return ApiResponse.ok(promiseService.getOverduePromises(userId, memberId));
     }
 
+    @PatchMapping("/{promiseId}/complete")
+    public ApiResponse<Void> completePromise(
+            @PathVariable Long promiseId,
+            @AuthenticationPrincipal Long userId) {
+        promiseService.completePromise(promiseId, userId);
+        return ApiResponse.ok(null);
+    }
+
 }
