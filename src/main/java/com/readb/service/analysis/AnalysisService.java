@@ -1253,7 +1253,8 @@ public class AnalysisService {
         return result;
     }
 
-    @Transactional
+    // @Transactional 미적용: 내부에서 외부 LLM API를 호출하므로 DB 커넥션을 길게 점유하지 않도록
+    // 조회/캐시 확인은 트랜잭션 없이 수행하고, 캐시 저장만 TransactionTemplate으로 짧게 처리한다.
     public TeamCoachingResponse getTeamCoaching(Long teamId, Long leaderId) {
         // ① IDOR 방어: 요청자가 해당 팀의 리더인지 검증
         teamRepository.findById(teamId).ifPresent(team -> {
@@ -1399,15 +1400,19 @@ public class AnalysisService {
 
             TeamCoachingResponse response = new TeamCoachingResponse(assessment, insights, actions);
 
-            // 동일 입력에 대해 다음 요청부터 재사용하도록 캐시에 저장
+            // 동일 입력에 대해 다음 요청부터 재사용하도록 캐시에 저장 (짧은 쓰기 트랜잭션)
             try {
                 String payload = objectMapper.writeValueAsString(response);
-                if (cached == null) {
-                    teamCoachingCacheRepository.save(TeamCoachingCache.builder()
-                            .teamId(teamId).signature(signature).payload(payload).build());
-                } else {
-                    cached.update(signature, payload);
-                }
+                transactionTemplate.executeWithoutResult(status -> {
+                    TeamCoachingCache entity = teamCoachingCacheRepository.findById(teamId).orElse(null);
+                    if (entity == null) {
+                        teamCoachingCacheRepository.save(TeamCoachingCache.builder()
+                                .teamId(teamId).signature(signature).payload(payload).build());
+                    } else {
+                        entity.update(signature, payload);
+                        teamCoachingCacheRepository.save(entity);
+                    }
+                });
             } catch (Exception e) {
                 log.warn("팀 코칭 캐시 저장 실패. teamId={}", teamId, e);
             }
@@ -1765,21 +1770,23 @@ public class AnalysisService {
         }
 
         List<Long> memberIds = members.stream().map(User::getId).toList();
-        Map<Long, User> memberById = members.stream()
-                .collect(Collectors.toMap(User::getId, u -> u));
 
         List<Promise> allPromises = promiseRepository.findByOwnerIdIn(memberIds);
         Map<Long, List<Promise>> byMember = allPromises.stream()
                 .collect(Collectors.groupingBy(Promise::getOwnerId));
 
-        List<Long> meetingIds = allPromises.stream()
-                .map(Promise::getMeetingId).distinct().toList();
+        // 회차 계산: 멤버별 전체 미팅을 1번에 조회해 메모리에서 id 순서대로 round 부여 (N+1 제거).
+        // 1:1 미팅은 멤버당 단일 리더이므로 멤버별 그룹핑이 (리더, 멤버) 쌍과 동일하다.
         Map<Long, Integer> roundByMeetingId = new java.util.HashMap<>();
-        for (Meeting m : meetingRepository.findAllById(meetingIds)) {
-            int round = (int) meetingRepository.countByLeaderIdAndMemberIdAndIdLessThanEqual(
-                    m.getLeaderId(), m.getMemberId(), m.getId());
-            roundByMeetingId.put(m.getId(), round);
-        }
+        meetingRepository.findByMemberIdInOrderByCreatedAtDesc(memberIds).stream()
+                .collect(Collectors.groupingBy(Meeting::getMemberId))
+                .values()
+                .forEach(meetingsOfMember -> {
+                    meetingsOfMember.sort(java.util.Comparator.comparing(Meeting::getId));
+                    for (int i = 0; i < meetingsOfMember.size(); i++) {
+                        roundByMeetingId.put(meetingsOfMember.get(i).getId(), i + 1);
+                    }
+                });
 
         List<TeamPromiseSummaryResponse.MemberPromiseSummary> memberSummaries = members.stream()
                 .filter(m -> byMember.containsKey(m.getId()))
