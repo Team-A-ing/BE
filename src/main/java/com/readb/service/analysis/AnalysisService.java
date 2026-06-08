@@ -1971,7 +1971,13 @@ public class AnalysisService {
     // 팀 단위: 멤버별 최신 미팅에서 나온 '미완료' 액션 플랜을 묶어 반환.
     // '1on1 미팅' 화면 액션 아이템에서 멤버별 다음 할 일을 간단히 보여주기 위함.
     @Transactional(readOnly = true)
-    public TeamActionPlanResponse getTeamActionPlans(Long teamId) {
+    public TeamActionPlanResponse getTeamActionPlans(Long teamId, Long leaderId) {
+        teamRepository.findById(teamId).ifPresent(team -> {
+            if (!leaderId.equals(team.getLeaderId())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN);
+            }
+        });
+
         List<User> members = userRepository.findByTeamId(teamId).stream()
                 .filter(u -> u.getRole() == UserRole.MEMBER)
                 .toList();
