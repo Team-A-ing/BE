@@ -108,7 +108,10 @@ public class AnalysisService {
                포함: "제가 해볼게요", "이런 아이디어가 있는데", "제가 먼저 만들어보겠습니다"
                제외: 지시에 대한 단순 수락("네 알겠습니다"), 이미 합의된 작업 재확인
 
-            분류 원칙: 애매하면 포함하지 마세요 (precision > recall). 원문 그대로 인용하세요.
+            분류 원칙 (recall 우선): 위 [제외] 항목(사교적 겸손/관용표현/단순 불만/단순 수락/합의된 작업 재확인)에
+            명백히 해당하는 경우만 빼고, 위험 감수 의도가 부분적으로라도 읽히면 포함하세요.
+            각 act에 confidence("high" 또는 "medium")를 부여하세요. 정의에 명확히 부합하면 high,
+            맥락상 그렇게 읽히지만 다소 애매하면 medium으로 포함하세요. 원문 그대로 인용하세요.
 
             Step D. 발화 비율 추정
             전체 발화 분량(문자수)을 기준으로 리더/멤버 비율을 추정하세요.
@@ -153,9 +156,9 @@ public class AnalysisService {
             반드시 아래 JSON 형식으로만 응답하세요:
             {
               "speechActs": {
-                "vulnerability": [{"text": "원문 그대로", "timestamp": 초단위_숫자}],
-                "constructiveDissent": [{"text": "원문 그대로", "timestamp": 초단위_숫자}],
-                "initiative": [{"text": "원문 그대로", "timestamp": 초단위_숫자}]
+                "vulnerability": [{"text": "원문 그대로", "timestamp": 초단위_숫자, "confidence": "high 또는 medium"}],
+                "constructiveDissent": [{"text": "원문 그대로", "timestamp": 초단위_숫자, "confidence": "high 또는 medium"}],
+                "initiative": [{"text": "원문 그대로", "timestamp": 초단위_숫자, "confidence": "high 또는 medium"}]
               },
               "talkRatio": {"leaderRatio": 숫자, "memberRatio": 숫자},
               "topics": ["주제1", "주제2"],
