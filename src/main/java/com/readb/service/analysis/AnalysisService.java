@@ -579,7 +579,8 @@ public class AnalysisService {
         double v = surveyDimension(((Number) vObj).doubleValue()) * 40.0;
         double d = surveyDimension(((Number) dObj).doubleValue()) * 35.0;
         double i = surveyDimension(((Number) iObj).doubleValue()) * 25.0;
-        return Math.max(0, Math.min(100, v + d + i));
+        double score = Math.max(0, Math.min(100, v + d + i));
+        return (double) Math.round(score); // γ 곡선의 긴 소수점 제거 — 정수로 표기
     }
 
     // 리커트 1~5 → 0~1 정규화 후 γ 곡선 적용 (고평가일수록 더 큰 할인)
