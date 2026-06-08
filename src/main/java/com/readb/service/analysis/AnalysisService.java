@@ -564,18 +564,28 @@ public class AnalysisService {
         }
     }
 
-    // VDI 기반 surveyScore: safetyScore와 동일 차원(0~100)으로 산출
-    // V(1~5)→max 40, D(1~5)→max 35, I(1~5)→max 25
+    // VDI 기반 surveyScore: safetyScore와 동일 차원(0~100)으로 산출.
+    // 리커트(1~5)를 0~1로 정규화((level-1)/4)하여 바닥을 0, 중립(3)을 50 기준으로 두고,
+    // 자기보고 과대평가(overreport)를 억제하기 위해 고평가 할인 곡선(γ=1.3)을 적용한다.
+    // 가중치 V 40% / D 35% / I 25%. (모두 3점 → ~41, 모두 4점 → ~69, 모두 5점 → 100)
+    private static final double SURVEY_GAMMA = 1.3;
+
     private Double computeSurveyScore(Map<String, Object> scores) {
         if (scores == null) return null;
         Object vObj = scores.get("vulnerabilityLevel");
         Object dObj = scores.get("dissentLevel");
         Object iObj = scores.get("initiativeLevel");
         if (vObj == null || dObj == null || iObj == null) return null;
-        double v = ((Number) vObj).doubleValue() * 8.0;   // max 40
-        double d = ((Number) dObj).doubleValue() * 7.0;   // max 35
-        double i = ((Number) iObj).doubleValue() * 5.0;   // max 25
+        double v = surveyDimension(((Number) vObj).doubleValue()) * 40.0;
+        double d = surveyDimension(((Number) dObj).doubleValue()) * 35.0;
+        double i = surveyDimension(((Number) iObj).doubleValue()) * 25.0;
         return Math.max(0, Math.min(100, v + d + i));
+    }
+
+    // 리커트 1~5 → 0~1 정규화 후 γ 곡선 적용 (고평가일수록 더 큰 할인)
+    private double surveyDimension(double level) {
+        double normalized = Math.max(0.0, Math.min(1.0, (level - 1.0) / 4.0));
+        return Math.pow(normalized, SURVEY_GAMMA);
     }
 
     private Double toDouble(Object val) {
