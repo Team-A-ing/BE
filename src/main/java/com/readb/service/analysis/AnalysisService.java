@@ -39,8 +39,10 @@ import com.readb.repository.MeetingRepository;
 import com.readb.repository.PromiseRepository;
 import com.readb.repository.RecordingRepository;
 import com.readb.repository.SurveyRepository;
+import com.readb.repository.TeamCoachingCacheRepository;
 import com.readb.repository.TeamRepository;
 import com.readb.repository.UserRepository;
+import com.readb.domain.team.TeamCoachingCache;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -272,6 +274,7 @@ public class AnalysisService {
     private final CareerEventRepository careerEventRepository;
     private final TeamRepository teamRepository;
     private final ActionPlanRepository actionPlanRepository;
+    private final TeamCoachingCacheRepository teamCoachingCacheRepository;
     private final LlmAdapter gptAdapter;
     private final LlmAdapter claudeAdapter;
     private final ObjectMapper objectMapper;
@@ -287,6 +290,7 @@ public class AnalysisService {
             CareerEventRepository careerEventRepository,
             TeamRepository teamRepository,
             ActionPlanRepository actionPlanRepository,
+            TeamCoachingCacheRepository teamCoachingCacheRepository,
             @Qualifier("gptMiniAdapter") LlmAdapter gptAdapter,
             @Qualifier("claudeAdapter") LlmAdapter claudeAdapter,
             ObjectMapper objectMapper,
@@ -300,6 +304,7 @@ public class AnalysisService {
         this.careerEventRepository = careerEventRepository;
         this.teamRepository = teamRepository;
         this.actionPlanRepository = actionPlanRepository;
+        this.teamCoachingCacheRepository = teamCoachingCacheRepository;
         this.gptAdapter = gptAdapter;
         this.claudeAdapter = claudeAdapter;
         this.objectMapper = objectMapper;
@@ -1248,7 +1253,7 @@ public class AnalysisService {
         return result;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public TeamCoachingResponse getTeamCoaching(Long teamId, Long leaderId) {
         // ① IDOR 방어: 요청자가 해당 팀의 리더인지 검증
         teamRepository.findById(teamId).ifPresent(team -> {
@@ -1282,12 +1287,14 @@ public class AnalysisService {
         prompt.append("[멤버별 최신 미팅 분석]\n");
 
         List<String> memberSummaries = new ArrayList<>();
+        List<Long> usedMeetingIds = new ArrayList<>();
         for (Map.Entry<Long, Long> entry : latestMeetingIdByMember.entrySet()) {
 
             Long memberId = entry.getKey();
             Long meetingId = entry.getValue();
             Analysis a = analysisByMeetingId.get(meetingId);
             if (a == null) continue;
+            usedMeetingIds.add(meetingId);
 
             User member = userById.get(memberId);
             Map<String, Object> acts = a.getSpeechActs();
@@ -1304,6 +1311,19 @@ public class AnalysisService {
         }
         // ③ 빈 데이터 조기 반환 — 분석 완료 미팅 없으면 GPT 호출 불필요
         if (memberSummaries.isEmpty()) return new TeamCoachingResponse("분석 완료된 미팅 데이터가 없습니다.", List.of(), List.of());
+
+        // 캐시 확인: 입력(분석에 사용된 미팅 집합)이 동일하면 기존 코칭을 그대로 반환하여
+        // 새 미팅이 없을 때 매 요청마다 GPT 호출로 결과가 달라지는 것을 방지한다.
+        String signature = usedMeetingIds.stream().sorted()
+                .map(String::valueOf).collect(Collectors.joining(","));
+        TeamCoachingCache cached = teamCoachingCacheRepository.findById(teamId).orElse(null);
+        if (cached != null && signature.equals(cached.getSignature())) {
+            try {
+                return objectMapper.readValue(cached.getPayload(), TeamCoachingResponse.class);
+            } catch (Exception e) {
+                log.warn("팀 코칭 캐시 역직렬화 실패, 재생성합니다. teamId={}", teamId, e);
+            }
+        }
 
         memberSummaries.forEach(s -> prompt.append(s).append("\n"));
 
@@ -1377,7 +1397,22 @@ public class AnalysisService {
             String assessment = parsed.get("overallAssessment") != null
                     ? parsed.get("overallAssessment").toString() : null;
 
-            return new TeamCoachingResponse(assessment, insights, actions);
+            TeamCoachingResponse response = new TeamCoachingResponse(assessment, insights, actions);
+
+            // 동일 입력에 대해 다음 요청부터 재사용하도록 캐시에 저장
+            try {
+                String payload = objectMapper.writeValueAsString(response);
+                if (cached == null) {
+                    teamCoachingCacheRepository.save(TeamCoachingCache.builder()
+                            .teamId(teamId).signature(signature).payload(payload).build());
+                } else {
+                    cached.update(signature, payload);
+                }
+            } catch (Exception e) {
+                log.warn("팀 코칭 캐시 저장 실패. teamId={}", teamId, e);
+            }
+
+            return response;
         } catch (Exception e) {
             log.warn("팀 코칭 가이드 생성 실패. teamId={}", teamId, e);
             return null;
