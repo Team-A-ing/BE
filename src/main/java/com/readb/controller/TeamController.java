@@ -11,6 +11,7 @@ import com.readb.dto.team.TeamDashboardResponse;
 import com.readb.dto.team.TeamJoinRequest;
 import com.readb.dto.team.TeamJoinResponse;
 import com.readb.dto.team.TeamMemberResponse;
+import com.readb.dto.team.TeamPromiseSummaryResponse;
 import com.readb.service.analysis.AnalysisService;
 import com.readb.service.team.TeamService;
 import jakarta.validation.Valid;
@@ -70,6 +71,13 @@ public class TeamController {
     @GetMapping("/{teamId}/talk-ratio-ranking")
     public ApiResponse<List<TalkRatioRankingItem>> getTalkRatioRanking(@PathVariable Long teamId) {
         return ApiResponse.ok(analysisService.getTalkRatioRanking(teamId));
+    }
+
+    @GetMapping("/{teamId}/promises/summary")
+    @PreAuthorize("hasRole('LEADER')")
+    public ApiResponse<TeamPromiseSummaryResponse> getTeamPromiseSummary(
+            @PathVariable Long teamId) {
+        return ApiResponse.ok(analysisService.getTeamPromiseSummary(teamId));
     }
 
     @GetMapping("/{teamId}/coaching")

@@ -24,6 +24,7 @@ import com.readb.dto.analysis.RiskLevel;
 import com.readb.dto.analysis.SpeechTrendResponse;
 import com.readb.dto.team.TeamCoachingResponse;
 import com.readb.dto.team.TeamDashboardResponse;
+import com.readb.dto.team.TeamPromiseSummaryResponse;
 import com.readb.domain.user.User;
 import com.readb.domain.actionplan.ActionPlan;
 import com.readb.domain.career.CareerEvent;
@@ -1702,6 +1703,64 @@ public class AnalysisService {
             map.put(ascending.get(i).getId(), i + 1);
         }
         return map;
+    }
+
+    @Transactional(readOnly = true)
+    public TeamPromiseSummaryResponse getTeamPromiseSummary(Long teamId) {
+        List<User> members = userRepository.findByTeamId(teamId).stream()
+                .filter(u -> u.getRole() == UserRole.MEMBER)
+                .toList();
+        if (members.isEmpty()) {
+            return new TeamPromiseSummaryResponse(List.of());
+        }
+
+        List<Long> memberIds = members.stream().map(User::getId).toList();
+        Map<Long, User> memberById = members.stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+
+        List<Promise> allPromises = promiseRepository.findByOwnerIdIn(memberIds);
+        Map<Long, List<Promise>> byMember = allPromises.stream()
+                .collect(Collectors.groupingBy(Promise::getOwnerId));
+
+        List<Long> meetingIds = allPromises.stream()
+                .map(Promise::getMeetingId).distinct().toList();
+        Map<Long, String> titleByMeetingId = meetingRepository.findAllById(meetingIds).stream()
+                .collect(Collectors.toMap(Meeting::getId, Meeting::getTitle));
+
+        List<TeamPromiseSummaryResponse.MemberPromiseSummary> memberSummaries = members.stream()
+                .filter(m -> byMember.containsKey(m.getId()))
+                .map(member -> {
+                    List<Promise> promises = byMember.get(member.getId());
+                    long completed = promises.stream().filter(p -> p.getStatus() == PromiseStatus.DONE).count();
+                    long pending = promises.stream().filter(p -> p.getStatus() == PromiseStatus.PENDING).count();
+                    long overdue = promises.stream().filter(p -> p.getStatus() == PromiseStatus.MISSED).count();
+
+                    List<TeamPromiseSummaryResponse.PromiseSummaryItem> items = promises.stream()
+                            .filter(p -> p.getStatus() == PromiseStatus.PENDING || p.getStatus() == PromiseStatus.MISSED)
+                            .map(p -> new TeamPromiseSummaryResponse.PromiseSummaryItem(
+                                    String.valueOf(p.getId()),
+                                    p.getContent(),
+                                    p.getContext(),
+                                    p.getStatus() == PromiseStatus.MISSED ? "OVERDUE" : "PENDING",
+                                    p.getCreatedAt() != null ? p.getCreatedAt().toLocalDate().toString() : null,
+                                    titleByMeetingId.getOrDefault(p.getMeetingId(), "1:1 미팅")
+                            ))
+                            .toList();
+
+                    if (items.isEmpty()) return null;
+
+                    return new TeamPromiseSummaryResponse.MemberPromiseSummary(
+                            String.valueOf(member.getId()),
+                            member.getName(),
+                            items,
+                            new TeamPromiseSummaryResponse.Stats(
+                                    promises.size(), (int) completed, (int) pending, (int) overdue)
+                    );
+                })
+                .filter(Objects::nonNull)
+                .toList();
+
+        return new TeamPromiseSummaryResponse(memberSummaries);
     }
 
     private CareerTimelineResponse toTimelineResponse(CareerEvent e, Map<Long, Integer> roundByMeetingId) {

@@ -20,4 +20,6 @@ public interface PromiseRepository extends JpaRepository<Promise, Long> {
 
     List<Promise> findByOwnerIdAndStatusOrderByCreatedAtDesc(Long memberId, PromiseStatus promiseStatus);
 
+    List<Promise> findByOwnerIdIn(List<Long> ownerIds);
+
 }
