@@ -1724,8 +1724,12 @@ public class AnalysisService {
 
         List<Long> meetingIds = allPromises.stream()
                 .map(Promise::getMeetingId).distinct().toList();
-        Map<Long, String> titleByMeetingId = meetingRepository.findAllById(meetingIds).stream()
-                .collect(Collectors.toMap(Meeting::getId, Meeting::getTitle));
+        Map<Long, Integer> roundByMeetingId = new java.util.HashMap<>();
+        for (Meeting m : meetingRepository.findAllById(meetingIds)) {
+            int round = (int) meetingRepository.countByLeaderIdAndMemberIdAndIdLessThanEqual(
+                    m.getLeaderId(), m.getMemberId(), m.getId());
+            roundByMeetingId.put(m.getId(), round);
+        }
 
         List<TeamPromiseSummaryResponse.MemberPromiseSummary> memberSummaries = members.stream()
                 .filter(m -> byMember.containsKey(m.getId()))
@@ -1743,7 +1747,7 @@ public class AnalysisService {
                                     p.getContext(),
                                     p.getStatus() == PromiseStatus.MISSED ? "OVERDUE" : "PENDING",
                                     p.getCreatedAt() != null ? p.getCreatedAt().toLocalDate().toString() : null,
-                                    titleByMeetingId.getOrDefault(p.getMeetingId(), "1:1 미팅")
+                                    roundByMeetingId.getOrDefault(p.getMeetingId(), 0)
                             ))
                             .toList();
 

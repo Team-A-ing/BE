@@ -17,7 +17,7 @@ public record TeamPromiseSummaryResponse(List<MemberPromiseSummary> memberPromis
             String context,
             String status,
             String createdAt,
-            String meetingTitle
+            int round
     ) {}
 
     public record Stats(int total, int completed, int pending, int overdue) {}

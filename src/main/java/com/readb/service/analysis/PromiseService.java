@@ -62,6 +62,18 @@ public class PromiseService {
         return Math.round((double) count / total * 1000) / 10.0;
     }
 
+    @Transactional
+    public void completePromise(Long promiseId, Long userId) {
+        Promise promise = promiseRepository.findById(promiseId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PROMISE_NOT_FOUND));
+        Meeting meeting = meetingRepository.findById(promise.getMeetingId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
+        if (!meeting.getLeaderId().equals(userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        promise.updateStatus(PromiseStatus.DONE);
+    }
+
     @Transactional(readOnly = true)
     public List<OverduePromiseResponse> getOverduePromises(Long userId, Long memberId) {
         User member = userRepository.findById(memberId)
