@@ -45,7 +45,15 @@ public class Promise {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "completed_at")
+    private LocalDateTime completedAt;
+
     public void updateStatus(PromiseStatus status) {
         this.status = status;
+    }
+
+    public void complete() {
+        this.status = PromiseStatus.DONE;
+        this.completedAt = LocalDateTime.now();
     }
 }

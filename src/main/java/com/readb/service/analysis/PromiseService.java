@@ -71,7 +71,7 @@ public class PromiseService {
         if (!meeting.getLeaderId().equals(userId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
-        promise.updateStatus(PromiseStatus.DONE);
+        promise.complete();
     }
 
     @Transactional(readOnly = true)

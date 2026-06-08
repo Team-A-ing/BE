@@ -1754,16 +1754,30 @@ public class AnalysisService {
                     long pending = promises.stream().filter(p -> p.getStatus() == PromiseStatus.PENDING).count();
                     long overdue = promises.stream().filter(p -> p.getStatus() == PromiseStatus.MISSED).count();
 
+                    LocalDate today = LocalDate.now();
+                    // 미이행(PENDING/MISSED)은 항상 표시, 오늘 완료한 약속은 체크된 상태로 당일까지 유지
                     List<TeamPromiseSummaryResponse.PromiseSummaryItem> items = promises.stream()
-                            .filter(p -> p.getStatus() == PromiseStatus.PENDING || p.getStatus() == PromiseStatus.MISSED)
-                            .map(p -> new TeamPromiseSummaryResponse.PromiseSummaryItem(
-                                    String.valueOf(p.getId()),
-                                    p.getContent(),
-                                    p.getContext(),
-                                    p.getStatus() == PromiseStatus.MISSED ? "OVERDUE" : "PENDING",
-                                    p.getCreatedAt() != null ? p.getCreatedAt().toLocalDate().toString() : null,
-                                    roundByMeetingId.getOrDefault(p.getMeetingId(), 0)
-                            ))
+                            .filter(p -> p.getStatus() == PromiseStatus.PENDING
+                                    || p.getStatus() == PromiseStatus.MISSED
+                                    || (p.getStatus() == PromiseStatus.DONE
+                                        && p.getCompletedAt() != null
+                                        && p.getCompletedAt().toLocalDate().isEqual(today)))
+                            .map(p -> {
+                                boolean isCompleted = p.getStatus() == PromiseStatus.DONE;
+                                String status = isCompleted ? "PENDING"
+                                        : (p.getStatus() == PromiseStatus.MISSED ? "OVERDUE" : "PENDING");
+                                return new TeamPromiseSummaryResponse.PromiseSummaryItem(
+                                        String.valueOf(p.getId()),
+                                        p.getContent(),
+                                        p.getContext(),
+                                        status,
+                                        p.getCreatedAt() != null ? p.getCreatedAt().toLocalDate().toString() : null,
+                                        roundByMeetingId.getOrDefault(p.getMeetingId(), 0),
+                                        isCompleted
+                                );
+                            })
+                            // 미완료를 위로, 완료된 항목을 아래로 정렬
+                            .sorted(java.util.Comparator.comparing(TeamPromiseSummaryResponse.PromiseSummaryItem::isCompleted))
                             .toList();
 
                     if (items.isEmpty()) return null;
