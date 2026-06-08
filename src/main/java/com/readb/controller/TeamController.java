@@ -4,6 +4,7 @@ import com.readb.common.response.ApiResponse;
 import com.readb.dto.analysis.BlockerPyramidResponse;
 import com.readb.dto.analysis.RadarDataPoint;
 import com.readb.dto.analysis.TalkRatioRankingItem;
+import com.readb.dto.team.TeamActionPlanResponse;
 import com.readb.dto.team.TeamCoachingResponse;
 import com.readb.dto.team.TeamCreateRequest;
 import com.readb.dto.team.TeamCreateResponse;
@@ -86,5 +87,11 @@ public class TeamController {
             @PathVariable Long teamId,
             @AuthenticationPrincipal Long leaderId) {
         return ApiResponse.ok(analysisService.getTeamCoaching(teamId, leaderId));
+    }
+
+    @GetMapping("/{teamId}/action-plans")
+    @PreAuthorize("hasRole('LEADER')")
+    public ApiResponse<TeamActionPlanResponse> getTeamActionPlans(@PathVariable Long teamId) {
+        return ApiResponse.ok(analysisService.getTeamActionPlans(teamId));
     }
 }

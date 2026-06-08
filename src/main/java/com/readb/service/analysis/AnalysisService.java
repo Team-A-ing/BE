@@ -22,6 +22,7 @@ import com.readb.dto.analysis.PortfolioResponse;
 import com.readb.dto.analysis.RadarDataPoint;
 import com.readb.dto.analysis.RiskLevel;
 import com.readb.dto.analysis.SpeechTrendResponse;
+import com.readb.dto.team.TeamActionPlanResponse;
 import com.readb.dto.team.TeamCoachingResponse;
 import com.readb.dto.team.TeamDashboardResponse;
 import com.readb.dto.team.TeamPromiseSummaryResponse;
@@ -209,16 +210,28 @@ public class AnalysisService {
             절대 금지: AI 해석 라벨 ("수동 공격적", "번아웃 징후", "소극적 참여" 등)
             허용: 관찰 가능한 사실만 (원문 인용 + 타임스탬프, 횟수, 수치)
             severity: ERROR / WARNING / SUCCESS / INFO
+
+            [용어 일상화 — 매우 중요]
+            리더는 우리 내부 분석 용어를 모릅니다. title/dataSummary/actionGuide에서
+            Safety Score, Honesty Gap, OVERREPORT/UNDERREPORT, Vulnerability,
+            Constructive Dissent, Initiative, Speech Act, baseline 같은 내부 지표 용어를
+            절대 그대로 쓰지 말고, 아래처럼 일상 언어로 풀어 쓰세요. (수치·횟수는 근거로 활용)
+            - Vulnerability → "솔직하게 어려움·약점·고민을 털어놓는 말"
+            - Constructive Dissent → "다른 의견이나 우려를 건설적으로 꺼내는 말"
+            - Initiative → "먼저 나서서 제안하거나 주도하는 말"
+            - Safety Score 하락 → "팀원이 속내를 편하게 꺼내기 어려워하는 신호"
+            - OVERREPORT(자기보고 > 행동) → "설문에서는 괜찮다고 했지만 대화에서는 그만큼 드러나지 않음"
+
             - feedbacks: 리더를 위한 코칭 피드백 (최대 4개, 중요한 것부터)
-              - title: 한 줄 요약
+              - title: 한 줄 요약 (지표 용어 없이 일상 언어)
               - evidenceQuote: 관련 발화 원문 인용 (없으면 빈 문자열)
-              - dataSummary: 수치/사실 근거
-              - actionGuide: 리더가 다음에 취할 행동
+              - dataSummary: 수치/사실 근거 (지표 이름 없이 자연스럽게)
+              - actionGuide: 리더가 다음에 취할 구체적 행동
             - nextActionPlans: 이번 미팅 결과로 리더가 해야 할 구체적 실행 과제 (최대 4개)
 
             이전 미팅 컨텍스트가 제공된 경우, 피드백에 변화량을 반드시 포함하세요.
-            예: "Vulnerability 발화가 이전 3회 평균 2.3건에서 0건으로 감소했습니다"
-            Safety Score가 baseline 대비 30%+ 하락하면 반드시 WARNING으로 언급하세요.
+            예: "솔직하게 고민을 털어놓는 발언이 이전 3회 평균 2~3번에서 이번엔 한 번도 없었습니다"
+            심리적 안전감이 이전 평균 대비 30% 이상 떨어지면 반드시 WARNING으로 언급하세요.
 
             반드시 아래 JSON 형식으로만 응답하세요:
             {
@@ -1846,6 +1859,57 @@ public class AnalysisService {
                 .toList();
 
         return new TeamPromiseSummaryResponse(memberSummaries);
+    }
+
+    // 팀 단위: 멤버별 최신 미팅에서 나온 '미완료' 액션 플랜을 묶어 반환.
+    // '1on1 미팅' 화면 액션 아이템에서 멤버별 다음 할 일을 간단히 보여주기 위함.
+    @Transactional(readOnly = true)
+    public TeamActionPlanResponse getTeamActionPlans(Long teamId) {
+        List<User> members = userRepository.findByTeamId(teamId).stream()
+                .filter(u -> u.getRole() == UserRole.MEMBER)
+                .toList();
+        if (members.isEmpty()) return new TeamActionPlanResponse(List.of());
+
+        List<Long> memberIds = members.stream().map(User::getId).toList();
+        Map<Long, User> userById = members.stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+
+        List<Meeting> allMeetings = meetingRepository.findByMemberIdInOrderByCreatedAtDesc(memberIds);
+        if (allMeetings.isEmpty()) return new TeamActionPlanResponse(List.of());
+
+        // 회차 계산 (멤버별 id 오름차순) + 멤버별 최신 미팅(createdAt 내림차순 첫 항목)
+        Map<Long, Integer> roundByMeetingId = new java.util.HashMap<>();
+        allMeetings.stream().collect(Collectors.groupingBy(Meeting::getMemberId))
+                .values().forEach(list -> {
+                    list.sort(java.util.Comparator.comparing(Meeting::getId));
+                    for (int i = 0; i < list.size(); i++) {
+                        roundByMeetingId.put(list.get(i).getId(), i + 1);
+                    }
+                });
+        Map<Long, Long> latestMeetingIdByMember = new LinkedHashMap<>();
+        allMeetings.forEach(m -> latestMeetingIdByMember.putIfAbsent(m.getMemberId(), m.getId()));
+
+        List<Long> latestMeetingIds = new ArrayList<>(latestMeetingIdByMember.values());
+        Map<Long, List<ActionPlan>> plansByMeeting = actionPlanRepository
+                .findByMeetingIdInAndIsCompletedFalseOrderByIdAsc(latestMeetingIds).stream()
+                .collect(Collectors.groupingBy(ActionPlan::getMeetingId));
+
+        List<TeamActionPlanResponse.MemberActionPlans> result = new ArrayList<>();
+        for (Map.Entry<Long, Long> entry : latestMeetingIdByMember.entrySet()) {
+            Long memberId = entry.getKey();
+            Long meetingId = entry.getValue();
+            List<ActionPlan> plans = plansByMeeting.getOrDefault(meetingId, List.of());
+            if (plans.isEmpty()) continue;
+            result.add(new TeamActionPlanResponse.MemberActionPlans(
+                    memberId,
+                    userById.get(memberId).getName(),
+                    roundByMeetingId.getOrDefault(meetingId, 0),
+                    plans.stream()
+                            .map(p -> new TeamActionPlanResponse.PlanItem(p.getId(), p.getContent()))
+                            .toList()
+            ));
+        }
+        return new TeamActionPlanResponse(result);
     }
 
     private CareerTimelineResponse toTimelineResponse(CareerEvent e, Map<Long, Integer> roundByMeetingId) {
