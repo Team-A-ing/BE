@@ -1630,7 +1630,8 @@ public class AnalysisService {
                     Object kw = m.get("keyword");
                     Object guide = m.get("actionGuide");
                     if (kw != null && guide != null) {
-                        guideByKeyword.put(kw.toString(), guide.toString());
+                        // LLM이 대소문자/공백 차이로 키워드를 약간 다르게 반환해도 매칭되도록 정규화 키 사용
+                        guideByKeyword.put(normalizeKeyword(kw.toString()), guide.toString());
                     }
                 }
             }
@@ -1644,7 +1645,7 @@ public class AnalysisService {
                 .map(kw -> {
                     String severity = kw.count() >= 3 ? "ERROR" : kw.count() == 2 ? "WARNING" : "INFO";
                     String summary = kw.mentionedBy() + "명의 멤버가 총 " + kw.count() + "회 언급";
-                    String guide = guideByKeyword.getOrDefault(kw.keyword(), kw.actionGuide());
+                    String guide = guideByKeyword.getOrDefault(normalizeKeyword(kw.keyword()), kw.actionGuide());
                     return new BlockerPyramidResponse.ActionPrescription(severity,
                             kw.keyword() + " 반복 언급", summary, guide);
                 })
@@ -1668,6 +1669,11 @@ public class AnalysisService {
         }
 
         return prescriptions;
+    }
+
+    // LLM이 반환한 키워드와 원본 키워드를 견고하게 매칭하기 위한 정규화 (대소문자/공백 차이 흡수)
+    private static String normalizeKeyword(String kw) {
+        return kw == null ? "" : kw.replaceAll("\\s+", "").toLowerCase();
     }
 
     @Transactional(readOnly = true)

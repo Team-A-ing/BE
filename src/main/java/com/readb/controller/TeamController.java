@@ -91,7 +91,9 @@ public class TeamController {
 
     @GetMapping("/{teamId}/action-plans")
     @PreAuthorize("hasRole('LEADER')")
-    public ApiResponse<TeamActionPlanResponse> getTeamActionPlans(@PathVariable Long teamId) {
-        return ApiResponse.ok(analysisService.getTeamActionPlans(teamId));
+    public ApiResponse<TeamActionPlanResponse> getTeamActionPlans(
+            @PathVariable Long teamId,
+            @AuthenticationPrincipal Long leaderId) {
+        return ApiResponse.ok(analysisService.getTeamActionPlans(teamId, leaderId));
     }
 }
