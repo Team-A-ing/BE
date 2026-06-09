@@ -22,6 +22,7 @@ import com.readb.dto.analysis.PortfolioResponse;
 import com.readb.dto.analysis.RadarDataPoint;
 import com.readb.dto.analysis.RiskLevel;
 import com.readb.dto.analysis.SpeechTrendResponse;
+import com.readb.dto.team.TeamActionPlanResponse;
 import com.readb.dto.team.TeamCoachingResponse;
 import com.readb.dto.team.TeamDashboardResponse;
 import com.readb.dto.team.TeamPromiseSummaryResponse;
@@ -40,9 +41,11 @@ import com.readb.repository.PromiseRepository;
 import com.readb.repository.RecordingRepository;
 import com.readb.repository.SurveyRepository;
 import com.readb.repository.TeamCoachingCacheRepository;
+import com.readb.repository.TeamBlockerCacheRepository;
 import com.readb.repository.TeamRepository;
 import com.readb.repository.UserRepository;
 import com.readb.domain.team.TeamCoachingCache;
+import com.readb.domain.team.TeamBlockerCache;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -209,16 +212,35 @@ public class AnalysisService {
             절대 금지: AI 해석 라벨 ("수동 공격적", "번아웃 징후", "소극적 참여" 등)
             허용: 관찰 가능한 사실만 (원문 인용 + 타임스탬프, 횟수, 수치)
             severity: ERROR / WARNING / SUCCESS / INFO
+
+            [용어 일상화 — 매우 중요]
+            리더는 우리 내부 분석 용어를 모릅니다. title/dataSummary/actionGuide에서
+            Safety Score, Honesty Gap, OVERREPORT/UNDERREPORT, Vulnerability,
+            Constructive Dissent, Initiative, Speech Act, baseline 같은 내부 지표 용어를
+            절대 그대로 쓰지 말고, 아래처럼 일상 언어로 풀어 쓰세요. (수치·횟수는 근거로 활용)
+            - Vulnerability → "솔직하게 어려움·약점·고민을 털어놓는 말"
+            - Constructive Dissent → "다른 의견이나 우려를 건설적으로 꺼내는 말"
+            - Initiative → "먼저 나서서 제안하거나 주도하는 말"
+            - Safety Score 하락 → "팀원이 속내를 편하게 꺼내기 어려워하는 신호"
+            - OVERREPORT(자기보고 > 행동) → "설문에서는 괜찮다고 했지만 대화에서는 그만큼 드러나지 않음"
+
             - feedbacks: 리더를 위한 코칭 피드백 (최대 4개, 중요한 것부터)
-              - title: 한 줄 요약
+              - title: 한 줄 요약 (지표 용어 없이 일상 언어)
               - evidenceQuote: 관련 발화 원문 인용 (없으면 빈 문자열)
-              - dataSummary: 수치/사실 근거
-              - actionGuide: 리더가 다음에 취할 행동
-            - nextActionPlans: 이번 미팅 결과로 리더가 해야 할 구체적 실행 과제 (최대 4개)
+              - dataSummary: 수치/사실 근거 (지표 이름 없이 자연스럽게)
+              - actionGuide: 리더가 다음에 취할 구체적 행동
+            - nextActionPlans: 이번 미팅의 실제 대화에 근거해 리더가 다음에 실행할 구체적 과제 (최대 4개)
+              [작성 규칙 — 매우 중요]
+              · 반드시 이번 transcript에서 실제로 나온 구체적 사안(멤버가 말한 문제·요청·약속·아이디어)에 근거하세요.
+                일반론("소통을 늘리세요", "안전한 분위기를 만드세요")이나 추상적 과제는 금지합니다.
+              · 각 과제는 '무엇을, 어떻게(또는 누구와), 언제까지'가 드러나게 한 문장으로 쓰세요.
+                예) "정민님이 언급한 'API 응답 지연' 문제를 다음 1on1 전까지 백엔드 담당자와 원인 범위를 좁혀 공유하세요."
+              · 내부 지표 용어(Vulnerability, Initiative, SafetyScore 등)를 쓰지 말고 일상 언어로 작성하세요.
+              · 근거가 될 발화가 없으면 억지로 만들지 말고 개수를 줄이세요(0개 가능).
 
             이전 미팅 컨텍스트가 제공된 경우, 피드백에 변화량을 반드시 포함하세요.
-            예: "Vulnerability 발화가 이전 3회 평균 2.3건에서 0건으로 감소했습니다"
-            Safety Score가 baseline 대비 30%+ 하락하면 반드시 WARNING으로 언급하세요.
+            예: "솔직하게 고민을 털어놓는 발언이 이전 3회 평균 2~3번에서 이번엔 한 번도 없었습니다"
+            심리적 안전감이 이전 평균 대비 30% 이상 떨어지면 반드시 WARNING으로 언급하세요.
 
             반드시 아래 JSON 형식으로만 응답하세요:
             {
@@ -275,6 +297,7 @@ public class AnalysisService {
     private final TeamRepository teamRepository;
     private final ActionPlanRepository actionPlanRepository;
     private final TeamCoachingCacheRepository teamCoachingCacheRepository;
+    private final TeamBlockerCacheRepository teamBlockerCacheRepository;
     private final LlmAdapter gptAdapter;
     private final LlmAdapter claudeAdapter;
     private final ObjectMapper objectMapper;
@@ -291,6 +314,7 @@ public class AnalysisService {
             TeamRepository teamRepository,
             ActionPlanRepository actionPlanRepository,
             TeamCoachingCacheRepository teamCoachingCacheRepository,
+            TeamBlockerCacheRepository teamBlockerCacheRepository,
             @Qualifier("gptMiniAdapter") LlmAdapter gptAdapter,
             @Qualifier("claudeAdapter") LlmAdapter claudeAdapter,
             ObjectMapper objectMapper,
@@ -305,6 +329,7 @@ public class AnalysisService {
         this.teamRepository = teamRepository;
         this.actionPlanRepository = actionPlanRepository;
         this.teamCoachingCacheRepository = teamCoachingCacheRepository;
+        this.teamBlockerCacheRepository = teamBlockerCacheRepository;
         this.gptAdapter = gptAdapter;
         this.claudeAdapter = claudeAdapter;
         this.objectMapper = objectMapper;
@@ -1491,7 +1516,8 @@ public class AnalysisService {
         return result;
     }
 
-    @Transactional(readOnly = true)
+    // @Transactional 미적용: 블로커 처방을 외부 LLM으로 생성하므로 DB 커넥션을 길게 점유하지 않도록
+    // 조회/캐시 확인은 트랜잭션 없이, 캐시 저장만 TransactionTemplate으로 짧게 처리한다.
     public BlockerPyramidResponse getBlockerData(Long teamId) {
         List<Meeting> meetings = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId);
         if (meetings.isEmpty()) return new BlockerPyramidResponse(List.of(), List.of());
@@ -1538,8 +1564,18 @@ public class AnalysisService {
                 })
                 .toList();
 
-        List<BlockerPyramidResponse.ActionPrescription> prescriptions = keywords.stream()
-                .limit(3)
+        List<BlockerKeyword> topKeywords = keywords.stream().limit(3).toList();
+        List<BlockerPyramidResponse.ActionPrescription> prescriptions =
+                buildBlockerPrescriptions(teamId, topKeywords);
+
+        return new BlockerPyramidResponse(keywords, prescriptions);
+    }
+
+    // 상위 블로커에 대해 LLM으로 실용적 처방을 생성. 입력(블로커 집합)이 동일하면 캐시를 재사용해
+    // 새로고침마다 결과가 달라지지 않게 한다. LLM 실패 시 템플릿 처방으로 폴백한다.
+    private List<BlockerPyramidResponse.ActionPrescription> buildBlockerPrescriptions(
+            Long teamId, List<BlockerKeyword> topKeywords) {
+        List<BlockerPyramidResponse.ActionPrescription> fallback = topKeywords.stream()
                 .map(kw -> {
                     String severity = kw.count() >= 3 ? "ERROR" : kw.count() == 2 ? "WARNING" : "INFO";
                     String summary = kw.mentionedBy() + "명의 멤버가 총 " + kw.count() + "회 언급";
@@ -1547,8 +1583,98 @@ public class AnalysisService {
                             kw.keyword() + " 반복 언급", summary, kw.actionGuide());
                 })
                 .toList();
+        if (topKeywords.isEmpty()) return fallback;
 
-        return new BlockerPyramidResponse(keywords, prescriptions);
+        String signature = topKeywords.stream()
+                .map(kw -> kw.keyword() + ":" + kw.count())
+                .collect(Collectors.joining(","));
+        TeamBlockerCache cached = teamBlockerCacheRepository.findById(teamId).orElse(null);
+        if (cached != null && signature.equals(cached.getSignature())) {
+            try {
+                return objectMapper.readValue(cached.getPayload(),
+                        new com.fasterxml.jackson.core.type.TypeReference<
+                                List<BlockerPyramidResponse.ActionPrescription>>() {});
+            } catch (Exception e) {
+                log.warn("블로커 처방 캐시 역직렬화 실패, 재생성합니다. teamId={}", teamId, e);
+            }
+        }
+
+        // GPT 입력: 상위 블로커 + 언급 멤버
+        StringBuilder prompt = new StringBuilder("[팀 블로커 해결 처방 생성]\n\n");
+        prompt.append("아래는 팀 1on1에서 반복 언급된 블로커입니다.\n");
+        for (BlockerKeyword kw : topKeywords) {
+            String members = kw.relatedMembers().stream()
+                    .map(rm -> rm.memberName() + "(" + rm.mentionCount() + "회)")
+                    .collect(Collectors.joining(", "));
+            prompt.append(String.format("- '%s' : 총 %d회, 언급 멤버 %s%n",
+                    kw.keyword(), kw.count(), members.isEmpty() ? "없음" : members));
+        }
+        prompt.append("""
+
+                각 블로커마다 리더가 바로 실행할 수 있는 '정확하고 실용적인' 해결 처방을 1개씩 작성하세요.
+                - 해당 블로커의 성격에 맞는 구체적 행동이어야 합니다(무엇을·누구와·어떻게).
+                - "구체적 원인을 파악하세요" 같은 일반론·추상적 표현 금지.
+                - 내부 지표 용어(SafetyScore, Vulnerability 등)를 쓰지 말고 일상 언어로 작성.
+                - 여러 멤버가 반복 언급한 블로커는 팀 차원 조치를, 소수면 해당 멤버와의 1on1 조치를 제안.
+
+                반드시 아래 JSON 형식으로만 응답하세요(키워드는 입력과 동일하게):
+                {"prescriptions": [{"keyword": "블로커 키워드", "actionGuide": "실용적 처방 1문장"}]}
+                """);
+
+        Map<String, String> guideByKeyword = new java.util.HashMap<>();
+        try {
+            String raw = gptAdapter.chat("당신은 팀 블로커 해결을 돕는 1on1 코칭 전문가입니다.", prompt.toString());
+            Map<String, Object> parsed = parseJson(raw);
+            if (parsed != null && parsed.get("prescriptions") instanceof List<?> list) {
+                for (Object item : list) {
+                    if (!(item instanceof Map<?, ?> m)) continue;
+                    Object kw = m.get("keyword");
+                    Object guide = m.get("actionGuide");
+                    if (kw != null && guide != null) {
+                        // LLM이 대소문자/공백 차이로 키워드를 약간 다르게 반환해도 매칭되도록 정규화 키 사용
+                        guideByKeyword.put(normalizeKeyword(kw.toString()), guide.toString());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("블로커 처방 생성 실패, 템플릿으로 폴백합니다. teamId={}", teamId, e);
+            return fallback;
+        }
+        if (guideByKeyword.isEmpty()) return fallback;
+
+        List<BlockerPyramidResponse.ActionPrescription> prescriptions = topKeywords.stream()
+                .map(kw -> {
+                    String severity = kw.count() >= 3 ? "ERROR" : kw.count() == 2 ? "WARNING" : "INFO";
+                    String summary = kw.mentionedBy() + "명의 멤버가 총 " + kw.count() + "회 언급";
+                    String guide = guideByKeyword.getOrDefault(normalizeKeyword(kw.keyword()), kw.actionGuide());
+                    return new BlockerPyramidResponse.ActionPrescription(severity,
+                            kw.keyword() + " 반복 언급", summary, guide);
+                })
+                .toList();
+
+        // 캐시 저장 (짧은 쓰기 트랜잭션)
+        try {
+            String payload = objectMapper.writeValueAsString(prescriptions);
+            transactionTemplate.executeWithoutResult(status -> {
+                TeamBlockerCache entity = teamBlockerCacheRepository.findById(teamId).orElse(null);
+                if (entity == null) {
+                    teamBlockerCacheRepository.save(TeamBlockerCache.builder()
+                            .teamId(teamId).signature(signature).payload(payload).build());
+                } else {
+                    entity.update(signature, payload);
+                    teamBlockerCacheRepository.save(entity);
+                }
+            });
+        } catch (Exception e) {
+            log.warn("블로커 처방 캐시 저장 실패. teamId={}", teamId, e);
+        }
+
+        return prescriptions;
+    }
+
+    // LLM이 반환한 키워드와 원본 키워드를 견고하게 매칭하기 위한 정규화 (대소문자/공백 차이 흡수)
+    private static String normalizeKeyword(String kw) {
+        return kw == null ? "" : kw.replaceAll("\\s+", "").toLowerCase();
     }
 
     @Transactional(readOnly = true)
@@ -1847,6 +1973,63 @@ public class AnalysisService {
                 .toList();
 
         return new TeamPromiseSummaryResponse(memberSummaries);
+    }
+
+    // 팀 단위: 멤버별 최신 미팅에서 나온 '미완료' 액션 플랜을 묶어 반환.
+    // '1on1 미팅' 화면 액션 아이템에서 멤버별 다음 할 일을 간단히 보여주기 위함.
+    @Transactional(readOnly = true)
+    public TeamActionPlanResponse getTeamActionPlans(Long teamId, Long leaderId) {
+        teamRepository.findById(teamId).ifPresent(team -> {
+            if (!leaderId.equals(team.getLeaderId())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN);
+            }
+        });
+
+        List<User> members = userRepository.findByTeamId(teamId).stream()
+                .filter(u -> u.getRole() == UserRole.MEMBER)
+                .toList();
+        if (members.isEmpty()) return new TeamActionPlanResponse(List.of());
+
+        List<Long> memberIds = members.stream().map(User::getId).toList();
+        Map<Long, User> userById = members.stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+
+        List<Meeting> allMeetings = meetingRepository.findByMemberIdInOrderByCreatedAtDesc(memberIds);
+        if (allMeetings.isEmpty()) return new TeamActionPlanResponse(List.of());
+
+        // 회차 계산 (멤버별 id 오름차순) + 멤버별 최신 미팅(createdAt 내림차순 첫 항목)
+        Map<Long, Integer> roundByMeetingId = new java.util.HashMap<>();
+        allMeetings.stream().collect(Collectors.groupingBy(Meeting::getMemberId))
+                .values().forEach(list -> {
+                    list.sort(java.util.Comparator.comparing(Meeting::getId));
+                    for (int i = 0; i < list.size(); i++) {
+                        roundByMeetingId.put(list.get(i).getId(), i + 1);
+                    }
+                });
+        Map<Long, Long> latestMeetingIdByMember = new LinkedHashMap<>();
+        allMeetings.forEach(m -> latestMeetingIdByMember.putIfAbsent(m.getMemberId(), m.getId()));
+
+        List<Long> latestMeetingIds = new ArrayList<>(latestMeetingIdByMember.values());
+        Map<Long, List<ActionPlan>> plansByMeeting = actionPlanRepository
+                .findByMeetingIdInAndIsCompletedFalseOrderByIdAsc(latestMeetingIds).stream()
+                .collect(Collectors.groupingBy(ActionPlan::getMeetingId));
+
+        List<TeamActionPlanResponse.MemberActionPlans> result = new ArrayList<>();
+        for (Map.Entry<Long, Long> entry : latestMeetingIdByMember.entrySet()) {
+            Long memberId = entry.getKey();
+            Long meetingId = entry.getValue();
+            List<ActionPlan> plans = plansByMeeting.getOrDefault(meetingId, List.of());
+            if (plans.isEmpty()) continue;
+            result.add(new TeamActionPlanResponse.MemberActionPlans(
+                    memberId,
+                    userById.get(memberId).getName(),
+                    roundByMeetingId.getOrDefault(meetingId, 0),
+                    plans.stream()
+                            .map(p -> new TeamActionPlanResponse.PlanItem(p.getId(), p.getContent()))
+                            .toList()
+            ));
+        }
+        return new TeamActionPlanResponse(result);
     }
 
     private CareerTimelineResponse toTimelineResponse(CareerEvent e, Map<Long, Integer> roundByMeetingId) {

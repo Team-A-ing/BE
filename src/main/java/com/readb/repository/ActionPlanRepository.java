@@ -9,5 +9,7 @@ public interface ActionPlanRepository extends JpaRepository<ActionPlan, Long> {
 
     List<ActionPlan> findByMeetingIdOrderByIdAsc(Long meetingId);
 
+    List<ActionPlan> findByMeetingIdInAndIsCompletedFalseOrderByIdAsc(List<Long> meetingIds);
+
     void deleteByMeetingId(Long meetingId);
 }
