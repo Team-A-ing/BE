@@ -1154,7 +1154,7 @@ public class AnalysisService {
         List<Meeting> meetings = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId)
                 .stream().limit(20).collect(Collectors.toList());
         if (meetings.isEmpty()) {
-            return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of());
+            return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of(), null, null);
         }
 
         List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
@@ -1165,7 +1165,8 @@ public class AnalysisService {
                 .stream().collect(Collectors.toMap(Survey::getMeetingId, s -> s));
 
         // 미팅별 teamHealthScore = safetyScore×0.6 + surveyScore×0.4 (서베이 없으면 safetyScore 단독)
-        record ScoredMeeting(YearMonth month, double health, Long memberId, Long meetingId) {}
+        record ScoredMeeting(YearMonth month, double health, double safety, Double survey,
+                             Long memberId, Long meetingId) {}
 
         List<ScoredMeeting> scored = meetings.stream()
                 .map(m -> {
@@ -1173,23 +1174,22 @@ public class AnalysisService {
                     if (a == null || a.getSafetyScore() == null) return null;
                     double safety = a.getSafetyScore();
                     Survey s = surveyByMeeting.get(m.getId());
-                    double health = (s != null)
-                            ? safety * 0.6 + computeSurveyScore(s.getScores()) * 0.4
-                            : safety;
-                    return new ScoredMeeting(YearMonth.from(m.getCreatedAt()), health,
+                    Double survey = (s != null) ? computeSurveyScore(s.getScores()) : null;
+                    double health = (survey != null) ? safety * 0.6 + survey * 0.4 : safety;
+                    return new ScoredMeeting(YearMonth.from(m.getCreatedAt()), health, safety, survey,
                             m.getMemberId(), m.getId());
                 })
                 .filter(Objects::nonNull)
                 .toList();
 
         if (scored.isEmpty()) {
-            return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of());
+            return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of(), null, null);
         }
 
         double avg = scored.stream().mapToDouble(ScoredMeeting::health).average().orElse(0.0);
         double rounded = Math.round(avg * 10.0) / 10.0;
 
-        // ④ Trend: 전월 대비
+        // ④ Trend: 전월 대비 (문자열) + 이번 달 vs 직전 3개월 평균 (수치 델타)
         YearMonth thisMonth = YearMonth.now();
         YearMonth prevMonth = thisMonth.minusMonths(1);
         OptionalDouble thisAvg = scored.stream()
@@ -1199,12 +1199,31 @@ public class AnalysisService {
                 .filter(e -> e.month().equals(prevMonth))
                 .mapToDouble(ScoredMeeting::health).average();
 
+        boolean hasComparison = thisAvg.isPresent() && prevAvg.isPresent();
         String trend = "STABLE";
-        if (thisAvg.isPresent() && prevAvg.isPresent()) {
+        if (hasComparison) {
             double diff = thisAvg.getAsDouble() - prevAvg.getAsDouble();
             if (diff > 5) trend = "IMPROVING";
             else if (diff < -5) trend = "DECLINING";
         }
+
+        // 이번 달 평균 vs 직전 3개월(현재 월 제외) 평균.
+        // thisAvg/prevAvg와 일관되게 "월별 평균들의 평균"으로 계산 — 특정 월에 미팅이 몰려도 왜곡되지 않음.
+        List<Double> prior3MonthMeans = java.util.stream.Stream.of(
+                        thisMonth.minusMonths(1), thisMonth.minusMonths(2), thisMonth.minusMonths(3))
+                .map(ym -> scored.stream().filter(e -> e.month().equals(ym))
+                        .mapToDouble(ScoredMeeting::health).average())
+                .filter(OptionalDouble::isPresent).map(OptionalDouble::getAsDouble)
+                .toList();
+        Double trendDelta = (thisAvg.isPresent() && !prior3MonthMeans.isEmpty())
+                ? Math.round((thisAvg.getAsDouble()
+                        - prior3MonthMeans.stream().mapToDouble(Double::doubleValue).average().orElse(0.0)) * 10.0) / 10.0
+                : null;
+
+        double avgSafety = scored.stream().mapToDouble(ScoredMeeting::safety).average().orElse(0.0);
+        OptionalDouble avgSurveyOpt = scored.stream()
+                .filter(e -> e.survey() != null).mapToDouble(ScoredMeeting::survey).average();
+        Double avgSurvey = avgSurveyOpt.isPresent() ? avgSurveyOpt.getAsDouble() : null;
 
         // ⑤ Silent Risk: 멤버별 최근 3회 baseline 대비 현재 30%+ 하락
         Map<Long, String> memberNames = userRepository.findByTeamId(teamId)
@@ -1240,7 +1259,47 @@ public class AnalysisService {
             }
         }
 
-        return new TeamDashboardResponse(teamId, rounded, trend, alerts);
+        String statusNote = buildHealthStatusNote(rounded, avgSafety, avgSurvey, trend, hasComparison, alerts);
+        return new TeamDashboardResponse(teamId, rounded, trend, alerts, trendDelta, statusNote);
+    }
+
+    // Team Health Score가 왜 이 수준인지 일상 언어로 설명하는 짧은 문구 (규칙 기반, 결정적).
+    // 추세 라벨(안정/개선/감소)이 점수 수준과 혼동되지 않도록, 추세의 의미와 점수 수준을 함께 풀어준다.
+    // 예) "추세는 변동이 작아 '안정'이지만, 점수 자체는 낮은 상태예요."
+    private String buildHealthStatusNote(double health, double avgSafety, Double avgSurvey,
+                                         String trend, boolean hasComparison, List<String> alerts) {
+        boolean low = health < 45;
+        boolean mid = health >= 45 && health < 65;
+        String levelPhrase = low ? "점수 자체는 낮은 상태예요"
+                : mid ? "점수는 보통 수준이에요"
+                : "점수도 좋은 편이에요";
+
+        StringBuilder sb = new StringBuilder();
+        if (!hasComparison) {
+            // 이번 달/전월 데이터가 모두 있어야 추세 비교 가능. 부족하면 '안정'으로 단정하지 않고 안내.
+            String lead = low ? "현재 점수는 낮은 상태예요"
+                    : mid ? "현재 점수는 보통 수준이에요"
+                    : "현재 점수는 좋은 편이에요";
+            sb.append("아직 추세를 비교할 이전 데이터가 충분하지 않아요. ").append(lead).append(".");
+        } else {
+            // 추세 의미 + 점수 수준을 한 문장으로 — '안정'이 곧 건강함이 아님을 명확히
+            switch (trend) {
+                case "IMPROVING" -> sb.append("최근 점수가 오르는 추세이고, ").append(levelPhrase).append(".");
+                case "DECLINING" -> sb.append("최근 점수가 내려가는 추세이고, ").append(levelPhrase).append(".");
+                default -> sb.append("최근 변동이 크지 않아 추세는 '안정'")
+                        .append(low ? "이지만, " : "이고, ").append(levelPhrase).append(".");
+            }
+        }
+
+        // 점수가 낮거나 특이 신호가 있을 때만 원인 한 문장 덧붙임
+        if (avgSafety < 45) {
+            sb.append(" 실제 대화에서 솔직한 표현·의견 제시가 적게 관찰됐어요.");
+        } else if (avgSurvey != null && avgSurvey - avgSafety >= 15) {
+            sb.append(" 설문 응답에 비해 실제 발화로 드러나는 신호는 적은 편이에요.");
+        } else if (alerts != null && !alerts.isEmpty()) {
+            sb.append(" 최근 일부 팀원의 안전감이 떨어졌어요.");
+        }
+        return sb.toString();
     }
 
     @Transactional(readOnly = true)

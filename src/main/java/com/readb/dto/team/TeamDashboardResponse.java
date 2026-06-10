@@ -6,5 +6,7 @@ public record TeamDashboardResponse(
         Long teamId,
         Double teamHealthScore,
         String trend,
-        List<String> alerts
+        List<String> alerts,
+        Double trendDelta,
+        String statusNote
 ) {}
