@@ -1267,31 +1267,37 @@ public class AnalysisService {
             }
         }
 
-        String statusNote = buildHealthStatusNote(rounded, avgSafety, avgSurvey, trendDelta, alerts);
+        String statusNote = buildHealthStatusNote(rounded, avgSafety, avgSurvey, trend, alerts);
         return new TeamDashboardResponse(teamId, rounded, trend, alerts, trendDelta, statusNote);
     }
 
     // Team Health Score가 왜 이 수준인지 일상 언어로 설명하는 짧은 문구 (규칙 기반, 결정적).
+    // 추세 라벨(안정/개선/감소)이 점수 수준과 혼동되지 않도록, 추세의 의미와 점수 수준을 함께 풀어준다.
+    // 예) "추세는 변동이 작아 '안정'이지만, 점수 자체는 낮은 상태예요."
     private String buildHealthStatusNote(double health, double avgSafety, Double avgSurvey,
-                                         Double trendDelta, List<String> alerts) {
-        StringBuilder sb = new StringBuilder();
-        if (health >= 65) sb.append("팀 소통이 전반적으로 좋은 편이에요.");
-        else if (health >= 45) sb.append("팀 소통이 보통 수준이에요.");
-        else sb.append("팀 소통 신호가 약한 편이에요.");
+                                         String trend, List<String> alerts) {
+        boolean low = health < 45;
+        boolean mid = health >= 45 && health < 65;
+        String levelPhrase = low ? "점수 자체는 낮은 상태예요"
+                : mid ? "점수는 보통 수준이에요"
+                : "점수도 좋은 편이에요";
 
+        StringBuilder sb = new StringBuilder();
+        // 1) 추세 의미 + 점수 수준을 한 문장으로 — '안정'이 곧 건강함이 아님을 명확히
+        switch (trend) {
+            case "IMPROVING" -> sb.append("최근 점수가 오르는 추세이고, ").append(levelPhrase).append(".");
+            case "DECLINING" -> sb.append("최근 점수가 내려가는 추세이고, ").append(levelPhrase).append(".");
+            default -> sb.append("최근 변동이 크지 않아 추세는 '안정'")
+                    .append(low ? "이지만, " : "이고, ").append(levelPhrase).append(".");
+        }
+
+        // 2) 점수가 낮거나 특이 신호가 있을 때만 원인 한 문장 덧붙임
         if (avgSafety < 45) {
             sb.append(" 실제 대화에서 솔직한 표현·의견 제시가 적게 관찰됐어요.");
         } else if (avgSurvey != null && avgSurvey - avgSafety >= 15) {
             sb.append(" 설문 응답에 비해 실제 발화로 드러나는 신호는 적은 편이에요.");
         } else if (alerts != null && !alerts.isEmpty()) {
             sb.append(" 최근 일부 팀원의 안전감이 떨어졌어요.");
-        } else {
-            sb.append(" 대부분 팀원이 안정적으로 참여하고 있어요.");
-        }
-
-        if (trendDelta != null) {
-            if (trendDelta >= 3) sb.append(" 최근 한 달은 평소보다 올랐어요.");
-            else if (trendDelta <= -3) sb.append(" 최근 한 달은 평소보다 낮아졌어요.");
         }
         return sb.toString();
     }
