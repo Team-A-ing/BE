@@ -1167,7 +1167,7 @@ public class AnalysisService {
         List<Meeting> meetings = meetingRepository.findByTeamIdOrderByCreatedAtDesc(teamId)
                 .stream().limit(20).collect(Collectors.toList());
         if (meetings.isEmpty()) {
-            return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of());
+            return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of(), null, null);
         }
 
         List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
@@ -1178,7 +1178,8 @@ public class AnalysisService {
                 .stream().collect(Collectors.toMap(Survey::getMeetingId, s -> s));
 
         // 미팅별 teamHealthScore = safetyScore×0.6 + surveyScore×0.4 (서베이 없으면 safetyScore 단독)
-        record ScoredMeeting(YearMonth month, double health, Long memberId, Long meetingId) {}
+        record ScoredMeeting(YearMonth month, double health, double safety, Double survey,
+                             Long memberId, Long meetingId) {}
 
         List<ScoredMeeting> scored = meetings.stream()
                 .map(m -> {
@@ -1186,23 +1187,22 @@ public class AnalysisService {
                     if (a == null || a.getSafetyScore() == null) return null;
                     double safety = a.getSafetyScore();
                     Survey s = surveyByMeeting.get(m.getId());
-                    double health = (s != null)
-                            ? safety * 0.6 + computeSurveyScore(s.getScores()) * 0.4
-                            : safety;
-                    return new ScoredMeeting(YearMonth.from(m.getCreatedAt()), health,
+                    Double survey = (s != null) ? computeSurveyScore(s.getScores()) : null;
+                    double health = (survey != null) ? safety * 0.6 + survey * 0.4 : safety;
+                    return new ScoredMeeting(YearMonth.from(m.getCreatedAt()), health, safety, survey,
                             m.getMemberId(), m.getId());
                 })
                 .filter(Objects::nonNull)
                 .toList();
 
         if (scored.isEmpty()) {
-            return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of());
+            return new TeamDashboardResponse(teamId, 0.0, "NO_DATA", List.of(), null, null);
         }
 
         double avg = scored.stream().mapToDouble(ScoredMeeting::health).average().orElse(0.0);
         double rounded = Math.round(avg * 10.0) / 10.0;
 
-        // ④ Trend: 전월 대비
+        // ④ Trend: 전월 대비 (문자열) + 이번 달 vs 직전 3개월 평균 (수치 델타)
         YearMonth thisMonth = YearMonth.now();
         YearMonth prevMonth = thisMonth.minusMonths(1);
         OptionalDouble thisAvg = scored.stream()
@@ -1218,6 +1218,20 @@ public class AnalysisService {
             if (diff > 5) trend = "IMPROVING";
             else if (diff < -5) trend = "DECLINING";
         }
+
+        // 이번 달 평균 vs 직전 3개월(현재 월 제외) 평균
+        OptionalDouble prior3Avg = scored.stream()
+                .filter(e -> e.month().isBefore(thisMonth)
+                        && !e.month().isBefore(thisMonth.minusMonths(3)))
+                .mapToDouble(ScoredMeeting::health).average();
+        Double trendDelta = (thisAvg.isPresent() && prior3Avg.isPresent())
+                ? Math.round((thisAvg.getAsDouble() - prior3Avg.getAsDouble()) * 10.0) / 10.0
+                : null;
+
+        double avgSafety = scored.stream().mapToDouble(ScoredMeeting::safety).average().orElse(0.0);
+        OptionalDouble avgSurveyOpt = scored.stream()
+                .filter(e -> e.survey() != null).mapToDouble(ScoredMeeting::survey).average();
+        Double avgSurvey = avgSurveyOpt.isPresent() ? avgSurveyOpt.getAsDouble() : null;
 
         // ⑤ Silent Risk: 멤버별 최근 3회 baseline 대비 현재 30%+ 하락
         Map<Long, String> memberNames = userRepository.findByTeamId(teamId)
@@ -1253,7 +1267,33 @@ public class AnalysisService {
             }
         }
 
-        return new TeamDashboardResponse(teamId, rounded, trend, alerts);
+        String statusNote = buildHealthStatusNote(rounded, avgSafety, avgSurvey, trendDelta, alerts);
+        return new TeamDashboardResponse(teamId, rounded, trend, alerts, trendDelta, statusNote);
+    }
+
+    // Team Health Score가 왜 이 수준인지 일상 언어로 설명하는 짧은 문구 (규칙 기반, 결정적).
+    private String buildHealthStatusNote(double health, double avgSafety, Double avgSurvey,
+                                         Double trendDelta, List<String> alerts) {
+        StringBuilder sb = new StringBuilder();
+        if (health >= 65) sb.append("팀 소통이 전반적으로 좋은 편이에요.");
+        else if (health >= 45) sb.append("팀 소통이 보통 수준이에요.");
+        else sb.append("팀 소통 신호가 약한 편이에요.");
+
+        if (avgSafety < 45) {
+            sb.append(" 실제 대화에서 솔직한 표현·의견 제시가 적게 관찰됐어요.");
+        } else if (avgSurvey != null && avgSurvey - avgSafety >= 15) {
+            sb.append(" 설문 응답에 비해 실제 발화로 드러나는 신호는 적은 편이에요.");
+        } else if (alerts != null && !alerts.isEmpty()) {
+            sb.append(" 최근 일부 팀원의 안전감이 떨어졌어요.");
+        } else {
+            sb.append(" 대부분 팀원이 안정적으로 참여하고 있어요.");
+        }
+
+        if (trendDelta != null) {
+            if (trendDelta >= 3) sb.append(" 최근 한 달은 평소보다 올랐어요.");
+            else if (trendDelta <= -3) sb.append(" 최근 한 달은 평소보다 낮아졌어요.");
+        }
+        return sb.toString();
     }
 
     @Transactional(readOnly = true)
