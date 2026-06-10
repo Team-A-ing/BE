@@ -111,7 +111,10 @@ public class AnalysisService {
                포함: "제가 해볼게요", "이런 아이디어가 있는데", "제가 먼저 만들어보겠습니다"
                제외: 지시에 대한 단순 수락("네 알겠습니다"), 이미 합의된 작업 재확인
 
-            분류 원칙: 애매하면 포함하지 마세요 (precision > recall). 원문 그대로 인용하세요.
+            분류 원칙 (recall 우선): 위 [제외] 항목(사교적 겸손/관용표현/단순 불만/단순 수락/합의된 작업 재확인)에
+            명백히 해당하는 경우만 빼고, 위험 감수 의도가 부분적으로라도 읽히면 포함하세요.
+            각 act에 confidence("high" 또는 "medium")를 부여하세요. 정의에 명확히 부합하면 high,
+            맥락상 그렇게 읽히지만 다소 애매하면 medium으로 포함하세요. 원문 그대로 인용하세요.
 
             Step D. 발화 비율 추정
             전체 발화 분량(문자수)을 기준으로 리더/멤버 비율을 추정하세요.
@@ -156,9 +159,9 @@ public class AnalysisService {
             반드시 아래 JSON 형식으로만 응답하세요:
             {
               "speechActs": {
-                "vulnerability": [{"text": "원문 그대로", "timestamp": 초단위_숫자}],
-                "constructiveDissent": [{"text": "원문 그대로", "timestamp": 초단위_숫자}],
-                "initiative": [{"text": "원문 그대로", "timestamp": 초단위_숫자}]
+                "vulnerability": [{"text": "원문 그대로", "timestamp": 초단위_숫자, "confidence": "high 또는 medium"}],
+                "constructiveDissent": [{"text": "원문 그대로", "timestamp": 초단위_숫자, "confidence": "high 또는 medium"}],
+                "initiative": [{"text": "원문 그대로", "timestamp": 초단위_숫자, "confidence": "high 또는 medium"}]
               },
               "talkRatio": {"leaderRatio": 숫자, "memberRatio": 숫자},
               "topics": ["주제1", "주제2"],
@@ -183,13 +186,19 @@ public class AnalysisService {
             adjusted_count = round(raw_count × 30 ÷ actual_duration_minutes)
             미팅 시간 정보가 없으면 raw_count를 그대로 사용.
 
-            변환표 (체감 효과 감소 곡선 — 첫 발화의 심리적 의미가 가장 크므로):
-            - Vulnerability (max 40): 0회→0, 1회→20, 2회→32, 3회→38, 4회+→40
-            - constructiveDissent (max 35): 0회→0, 1회→18, 2회→28, 3회→33, 4회+→35
-            - Initiative (max 25): 0회→0, 1회→13, 2회→20, 3회→24, 4회+→25
-            safetyScore = V_score + D_score + I_score
+            중요: 짧은 1on1에서 위험 감수 발화(특히 vulnerability)는 원래 드뭅니다. 발화가 적다는 것은
+            "위험하다"는 증거가 아니라 "신호 없음(중립)"입니다. 따라서 중립 기준선(baseline) 40에서 출발해
+            관측된 위험 감수 발화만큼 가산합니다.
 
-            가중치 근거: Vulnerability(40%) > Dissent(35%) > Initiative(25%) — 대인 위험 감수 수준 순
+            baseline = 40
+            변환표 (가산점, 첫 발화의 심리적 의미가 가장 크므로 체감 효과 감소 곡선):
+            - Vulnerability (max +24): 0회→0, 1회→12, 2회→18, 3회→22, 4회+→24
+            - constructiveDissent (max +21): 0회→0, 1회→11, 2회→17, 3회→20, 4회+→21
+            - Initiative (max +15): 0회→0, 1회→8, 2회→12, 3회→14, 4회+→15
+            safetyScore = baseline(40) + V_score + D_score + I_score  (0~100, 합계 100 초과 시 100)
+
+            가중치 근거: Vulnerability(가장 큼) > Dissent > Initiative — 대인 위험 감수 수준 순
+            예) 발화 없음 → 40(중립), V1·D1·I1 → 40+12+11+8=71, 활발(V2·D1·I2) → 40+18+11+12=81
 
             [Honesty Gap — 방향성 분석]
             surveyScore가 제공된 경우: honestyGap = surveyScore - safetyScore (부호 있는 값)
@@ -197,7 +206,8 @@ public class AnalysisService {
             - gap > 0 → OVERREPORT (자기보고 > 행동 → 사회적 바람직성 편향 가능성)
             - gap ≤ 0 → UNDERREPORT (자기보고 ≤ 행동 → 겸손/보수적 → 안전)
 
-            위험도 (OVERREPORT일 때만): 1~20→SAFE, 21~40→CAUTION, 41~60→WARNING, 61+→DANGER
+            위험도(자기보고-행동 격차 크기): |gap|<15→SAFE, <25→CAUTION, <35→WARNING, ≥35→DANGER
+            (단, 한 미팅의 절대 점수보다 본인의 이전 추세 대비 변화가 더 신뢰할 만한 신호임)
 
             [Alignment Gap (0–100)]
             서베이 topics vs 실제 미팅 topics 일치도를 추정하고, 한 문장으로 구체적인 이유를 작성하세요.
@@ -631,8 +641,8 @@ public class AnalysisService {
             if (riskLevel == RiskLevel.DANGER)  return "이탈 위험 높음";
             if (riskLevel == RiskLevel.WARNING) return "이탈 위험 주의";
         }
-        if (safetyScore < 30) return "관찰 필요";
-        if (safetyScore < 60) return "안정";
+        if (safetyScore < 45) return "관찰 필요";
+        if (safetyScore < 70) return "안정";
         return "적극적 참여";
     }
 
@@ -643,10 +653,11 @@ public class AnalysisService {
 
     private static RiskLevel computeRiskLevel(Double honestyGap) {
         if (honestyGap == null) return RiskLevel.SAFE;
+        // 두 점수 모두 baseline 40 기준으로 정렬되어 정상 격차는 0 부근. SAFE 밴드를 넓혀 정상 변동을 위험으로 오판하지 않음.
         double abs = Math.abs(honestyGap);
-        if (abs < 10) return RiskLevel.SAFE;
-        if (abs < 20) return RiskLevel.CAUTION;
-        if (abs < 30) return RiskLevel.WARNING;
+        if (abs < 15) return RiskLevel.SAFE;
+        if (abs < 25) return RiskLevel.CAUTION;
+        if (abs < 35) return RiskLevel.WARNING;
         return RiskLevel.DANGER;
     }
 
@@ -909,8 +920,10 @@ public class AnalysisService {
 
     private String computeQuadrant(Double safetyScore, Double surveyScore) {
         if (safetyScore == null || surveyScore == null) return null;
-        boolean safetyHigh = safetyScore >= 50;
-        boolean surveyHigh = surveyScore >= 50;
+        // 두 점수의 중립 기준선이 40 부근(발화 없음=40). 분기점을 45로 두어 "발화가 조금이라도 있으면 상단",
+        // "신호 전무(40)만 하단"이 되게 함 → 정상 미팅이 좌하단 위험 영역에 몰리지 않음.
+        boolean safetyHigh = safetyScore >= 45;
+        boolean surveyHigh = surveyScore >= 45;
         if (surveyHigh && safetyHigh) return "STABLE";
         if (surveyHigh) return "SILENT_RISK";
         if (safetyHigh) return "CONSERVATIVE";
