@@ -4,6 +4,7 @@ import com.readb.common.response.ApiResponse;
 import com.readb.dto.analysis.CareerMemoryResponse;
 import com.readb.dto.analysis.CareerStatsResponse;
 import com.readb.dto.analysis.CareerTimelineResponse;
+import com.readb.dto.analysis.MemberInsightResponse;
 import com.readb.dto.analysis.PortfolioResponse;
 import com.readb.dto.analysis.SpeechTrendResponse;
 import com.readb.service.analysis.AnalysisService;
@@ -66,5 +67,12 @@ public class MemberController {
             @PathVariable Long memberId,
             @AuthenticationPrincipal Long requesterId) {
         return ApiResponse.ok(analysisService.getCareerShowcase(requesterId, memberId));
+    }
+
+    @GetMapping("/members/{memberId}/insight")
+    public ApiResponse<MemberInsightResponse> getMemberInsight(
+            @PathVariable Long memberId,
+            @AuthenticationPrincipal Long requesterId) {
+        return ApiResponse.ok(analysisService.getMemberInsight(requesterId, memberId));
     }
 }
