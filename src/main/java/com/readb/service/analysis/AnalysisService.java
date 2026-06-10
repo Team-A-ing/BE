@@ -1858,10 +1858,10 @@ public class AnalysisService {
 
         Map<Long, Analysis> analysisByMeeting = meetingIds.isEmpty() ? Map.of()
                 : analysisRepository.findByMeetingIdIn(meetingIds).stream()
-                        .collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
+                        .collect(Collectors.toMap(Analysis::getMeetingId, a -> a, (existing, replacement) -> existing));
         Map<Long, Survey> surveyByMeeting = meetingIds.isEmpty() ? Map.of()
                 : surveyRepository.findByMeetingIdIn(meetingIds).stream()
-                        .collect(Collectors.toMap(Survey::getMeetingId, s -> s));
+                        .collect(Collectors.toMap(Survey::getMeetingId, s -> s, (existing, replacement) -> existing));
 
         // 날짜별 약속 (이행/미이행)
         List<MemberInsightResponse.PromiseItem> promises = promiseRepository
