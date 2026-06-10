@@ -19,6 +19,7 @@ import com.readb.dto.analysis.TalkRatioRankingItem;
 import com.readb.dto.analysis.CareerMemoryResponse;
 import com.readb.dto.analysis.HonestyDirection;
 import com.readb.dto.analysis.PortfolioResponse;
+import com.readb.dto.analysis.MemberInsightResponse;
 import com.readb.dto.analysis.RadarDataPoint;
 import com.readb.dto.analysis.RiskLevel;
 import com.readb.dto.analysis.SpeechTrendResponse;
@@ -1842,6 +1843,68 @@ public class AnalysisService {
                 .limit(5)
                 .map(e -> toTimelineResponse(e, roundByMeetingId))
                 .toList();
+    }
+
+    // 리더용 멤버 상세: 약속(이행/미이행)·상태 추세(용어 없이)·누적 액션플랜. 기존 데이터/공식 재사용.
+    @Transactional(readOnly = true)
+    public MemberInsightResponse getMemberInsight(Long requesterId, Long memberId) {
+        checkCareerAccess(requesterId, memberId);
+        User member = userRepository.findById(memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
+        List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
+        Map<Long, Integer> roundByMeeting = buildRoundMap(meetings);
+
+        Map<Long, Analysis> analysisByMeeting = meetingIds.isEmpty() ? Map.of()
+                : analysisRepository.findByMeetingIdIn(meetingIds).stream()
+                        .collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
+        Map<Long, Survey> surveyByMeeting = meetingIds.isEmpty() ? Map.of()
+                : surveyRepository.findByMeetingIdIn(meetingIds).stream()
+                        .collect(Collectors.toMap(Survey::getMeetingId, s -> s));
+
+        // 날짜별 약속 (이행/미이행)
+        List<MemberInsightResponse.PromiseItem> promises = promiseRepository
+                .findByOwnerIdOrderByCreatedAtDesc(memberId).stream()
+                .map(p -> new MemberInsightResponse.PromiseItem(
+                        p.getId(), p.getContent(),
+                        p.getStatus() == PromiseStatus.DONE ? "DONE"
+                                : p.getStatus() == PromiseStatus.MISSED ? "OVERDUE" : "PENDING",
+                        p.getCreatedAt() != null ? p.getCreatedAt().toLocalDate().toString() : null,
+                        roundByMeeting.getOrDefault(p.getMeetingId(), 0)))
+                .toList();
+
+        // 누적 next action plan (날짜별)
+        List<MemberInsightResponse.ActionPlanItem> actionPlans = meetingIds.isEmpty() ? List.of()
+                : actionPlanRepository.findByMeetingIdInOrderByIdAsc(meetingIds).stream()
+                        .map(ap -> new MemberInsightResponse.ActionPlanItem(
+                                ap.getId(), ap.getContent(), ap.isCompleted(),
+                                ap.getCreatedAt() != null ? ap.getCreatedAt().toLocalDate().toString() : null,
+                                roundByMeeting.getOrDefault(ap.getMeetingId(), 0)))
+                        .toList();
+
+        // 상태 추세 (회차 오름차순, 내부 용어 없이 health 점수 + 라벨)
+        List<MemberInsightResponse.TrendPoint> statusTrend = meetings.stream()
+                .sorted(java.util.Comparator.comparing(Meeting::getId))
+                .map(m -> {
+                    Analysis a = analysisByMeeting.get(m.getId());
+                    if (a == null || a.getSafetyScore() == null) return null;
+                    double safety = a.getSafetyScore();
+                    Survey s = surveyByMeeting.get(m.getId());
+                    Double survey = (s != null) ? computeSurveyScore(s.getScores()) : null;
+                    double health = (survey != null) ? safety * 0.6 + survey * 0.4 : safety;
+                    double rounded = Math.round(health * 10.0) / 10.0;
+                    String level = rounded >= 65 ? "좋음" : rounded >= 45 ? "보통" : "낮음";
+                    String date = m.getScheduledAt() != null ? m.getScheduledAt().toLocalDate().toString()
+                            : (m.getCreatedAt() != null ? m.getCreatedAt().toLocalDate().toString() : null);
+                    return new MemberInsightResponse.TrendPoint(
+                            roundByMeeting.getOrDefault(m.getId(), 0), date, rounded, level);
+                })
+                .filter(Objects::nonNull)
+                .toList();
+
+        return new MemberInsightResponse(memberId, member.getName(), member.getJobTitle(),
+                promises, statusTrend, actionPlans);
     }
 
     private void checkCareerAccess(Long requesterId, Long memberId) {
