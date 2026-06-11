@@ -518,7 +518,8 @@ public class AnalysisService {
 
     // safetyScore는 LLM 산수를 신뢰하지 않고 step2 발화 카운트로 서버에서 결정적으로 계산.
     // (과거 LLM이 133점 등 범위 밖 값을 반환한 사례 있음)
-    private double computeSafetyScore(Map<String, Object> speechActs, Integer durationSec) {
+    private double computeSafetyScore(Object speechActsObj, Integer durationSec) {
+        Map<?, ?> speechActs = speechActsObj instanceof Map ? (Map<?, ?>) speechActsObj : null;
         int v = normalizeCount(listSize(speechActs != null ? speechActs.get("vulnerability") : null), durationSec);
         int d = normalizeCount(listSize(speechActs != null ? speechActs.get("constructiveDissent") : null), durationSec);
         int i = normalizeCount(listSize(speechActs != null ? speechActs.get("initiative") : null), durationSec);
