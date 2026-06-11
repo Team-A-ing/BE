@@ -1795,7 +1795,17 @@ public class AnalysisService {
                             countSpeechAct(acts, "dissent"),
                             countSpeechAct(acts, "initiative")
                     );
-                })Response(List.of(), List.of(), List.of(), List.of());
+                })
+                .toList();
+
+        return new PageImpl<>(content, pageable, meetingPage.getTotalElements());
+    }
+
+    @Transactional(readOnly = true)
+    public PortfolioResponse getPortfolio(Long memberId) {
+        Pageable recent = PageRequest.of(0, 50, Sort.by(Sort.Direction.DESC, "createdAt"));
+        List<Meeting> meetings = meetingRepository.findByMemberId(memberId, recent).getContent();
+        if (meetings.isEmpty()) return new PortfolioResponse(List.of(), List.of(), List.of(), List.of());
 
         List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
         Map<Long, Analysis> byMeetingId = analysisRepository.findByMeetingIdIn(meetingIds)
@@ -1976,17 +1986,7 @@ public class AnalysisService {
                     String level = rounded >= 65 ? "좋음" : rounded >= 45 ? "보통" : "낮음";
                     String date = m.getScheduledAt() != null ? m.getScheduledAt().toLocalDate().toString()
                             : (m.getCreatedAt() != null ? m.getCreatedAt().toLocalDate().toString() : null);
-     
-                .toList();
-
-        return new PageImpl<>(content, pageable, meetingPage.getTotalElements());
-    }
-
-    @Transactional(readOnly = true)
-    public PortfolioResponse getPortfolio(Long memberId) {
-        Pageable recent = PageRequest.of(0, 50, Sort.by(Sort.Direction.DESC, "createdAt"));
-        List<Meeting> meetings = meetingRepository.findByMemberId(memberId, recent).getContent();
-        if (meetings.isEmpty()) return new Portfolio               return new MemberInsightResponse.TrendPoint(
+                    return new MemberInsightResponse.TrendPoint(
                             roundByMeeting.getOrDefault(m.getId(), 0), date, rounded, level,
                             titleByMeeting.getOrDefault(m.getId(), "1:1 미팅"));
                 })
