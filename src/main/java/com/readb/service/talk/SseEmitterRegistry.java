@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.readb.dto.talk.TalkRatioEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -18,6 +19,17 @@ public class SseEmitterRegistry {
 
     private final Map<Long, SseEmitter> emitters = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper;
+
+    @Scheduled(fixedDelay = 20000)
+    public void sendHeartbeat() {
+        emitters.forEach((meetingId, emitter) -> {
+            try {
+                emitter.send(SseEmitter.event().name("heartbeat").data(""));
+            } catch (IOException e) {
+                emitters.remove(meetingId, emitter);
+            }
+        });
+    }
 
     public SseEmitter register(Long meetingId) {
         SseEmitter emitter = new SseEmitter(30 * 60 * 1000L);

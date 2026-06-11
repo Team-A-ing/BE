@@ -1213,20 +1213,25 @@ public class AnalysisService {
                 .filter(e -> e.month().equals(prevMonth))
                 .mapToDouble(ScoredMeeting::health).average();
 
+        boolean hasComparison = thisAvg.isPresent() && prevAvg.isPresent();
         String trend = "STABLE";
-        if (thisAvg.isPresent() && prevAvg.isPresent()) {
+        if (hasComparison) {
             double diff = thisAvg.getAsDouble() - prevAvg.getAsDouble();
             if (diff > 5) trend = "IMPROVING";
             else if (diff < -5) trend = "DECLINING";
         }
 
-        // 이번 달 평균 vs 직전 3개월(현재 월 제외) 평균
-        OptionalDouble prior3Avg = scored.stream()
-                .filter(e -> e.month().isBefore(thisMonth)
-                        && !e.month().isBefore(thisMonth.minusMonths(3)))
-                .mapToDouble(ScoredMeeting::health).average();
-        Double trendDelta = (thisAvg.isPresent() && prior3Avg.isPresent())
-                ? Math.round((thisAvg.getAsDouble() - prior3Avg.getAsDouble()) * 10.0) / 10.0
+        // 이번 달 평균 vs 직전 3개월(현재 월 제외) 평균.
+        // thisAvg/prevAvg와 일관되게 "월별 평균들의 평균"으로 계산 — 특정 월에 미팅이 몰려도 왜곡되지 않음.
+        List<Double> prior3MonthMeans = java.util.stream.Stream.of(
+                        thisMonth.minusMonths(1), thisMonth.minusMonths(2), thisMonth.minusMonths(3))
+                .map(ym -> scored.stream().filter(e -> e.month().equals(ym))
+                        .mapToDouble(ScoredMeeting::health).average())
+                .filter(OptionalDouble::isPresent).map(OptionalDouble::getAsDouble)
+                .toList();
+        Double trendDelta = (thisAvg.isPresent() && !prior3MonthMeans.isEmpty())
+                ? Math.round((thisAvg.getAsDouble()
+                        - prior3MonthMeans.stream().mapToDouble(Double::doubleValue).average().orElse(0.0)) * 10.0) / 10.0
                 : null;
 
         double avgSafety = scored.stream().mapToDouble(ScoredMeeting::safety).average().orElse(0.0);
@@ -1268,7 +1273,7 @@ public class AnalysisService {
             }
         }
 
-        String statusNote = buildHealthStatusNote(rounded, avgSafety, avgSurvey, trend, alerts);
+        String statusNote = buildHealthStatusNote(rounded, avgSafety, avgSurvey, trend, hasComparison, alerts);
         return new TeamDashboardResponse(teamId, rounded, trend, alerts, trendDelta, statusNote);
     }
 
@@ -1276,7 +1281,7 @@ public class AnalysisService {
     // 추세 라벨(안정/개선/감소)이 점수 수준과 혼동되지 않도록, 추세의 의미와 점수 수준을 함께 풀어준다.
     // 예) "추세는 변동이 작아 '안정'이지만, 점수 자체는 낮은 상태예요."
     private String buildHealthStatusNote(double health, double avgSafety, Double avgSurvey,
-                                         String trend, List<String> alerts) {
+                                         String trend, boolean hasComparison, List<String> alerts) {
         boolean low = health < 45;
         boolean mid = health >= 45 && health < 65;
         String levelPhrase = low ? "점수 자체는 낮은 상태예요"
@@ -1284,15 +1289,23 @@ public class AnalysisService {
                 : "점수도 좋은 편이에요";
 
         StringBuilder sb = new StringBuilder();
-        // 1) 추세 의미 + 점수 수준을 한 문장으로 — '안정'이 곧 건강함이 아님을 명확히
-        switch (trend) {
-            case "IMPROVING" -> sb.append("최근 점수가 오르는 추세이고, ").append(levelPhrase).append(".");
-            case "DECLINING" -> sb.append("최근 점수가 내려가는 추세이고, ").append(levelPhrase).append(".");
-            default -> sb.append("최근 변동이 크지 않아 추세는 '안정'")
-                    .append(low ? "이지만, " : "이고, ").append(levelPhrase).append(".");
+        if (!hasComparison) {
+            // 이번 달/전월 데이터가 모두 있어야 추세 비교 가능. 부족하면 '안정'으로 단정하지 않고 안내.
+            String lead = low ? "현재 점수는 낮은 상태예요"
+                    : mid ? "현재 점수는 보통 수준이에요"
+                    : "현재 점수는 좋은 편이에요";
+            sb.append("아직 추세를 비교할 이전 데이터가 충분하지 않아요. ").append(lead).append(".");
+        } else {
+            // 추세 의미 + 점수 수준을 한 문장으로 — '안정'이 곧 건강함이 아님을 명확히
+            switch (trend) {
+                case "IMPROVING" -> sb.append("최근 점수가 오르는 추세이고, ").append(levelPhrase).append(".");
+                case "DECLINING" -> sb.append("최근 점수가 내려가는 추세이고, ").append(levelPhrase).append(".");
+                default -> sb.append("최근 변동이 크지 않아 추세는 '안정'")
+                        .append(low ? "이지만, " : "이고, ").append(levelPhrase).append(".");
+            }
         }
 
-        // 2) 점수가 낮거나 특이 신호가 있을 때만 원인 한 문장 덧붙임
+        // 점수가 낮거나 특이 신호가 있을 때만 원인 한 문장 덧붙임
         if (avgSafety < 45) {
             sb.append(" 실제 대화에서 솔직한 표현·의견 제시가 적게 관찰됐어요.");
         } else if (avgSurvey != null && avgSurvey - avgSafety >= 15) {
@@ -1782,17 +1795,7 @@ public class AnalysisService {
                             countSpeechAct(acts, "dissent"),
                             countSpeechAct(acts, "initiative")
                     );
-                })
-                .toList();
-
-        return new PageImpl<>(content, pageable, meetingPage.getTotalElements());
-    }
-
-    @Transactional(readOnly = true)
-    public PortfolioResponse getPortfolio(Long memberId) {
-        Pageable recent = PageRequest.of(0, 50, Sort.by(Sort.Direction.DESC, "createdAt"));
-        List<Meeting> meetings = meetingRepository.findByMemberId(memberId, recent).getContent();
-        if (meetings.isEmpty()) return new PortfolioResponse(List.of(), List.of(), List.of(), List.of());
+                })Response(List.of(), List.of(), List.of(), List.of());
 
         List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
         Map<Long, Analysis> byMeetingId = analysisRepository.findByMeetingIdIn(meetingIds)
@@ -1973,7 +1976,17 @@ public class AnalysisService {
                     String level = rounded >= 65 ? "좋음" : rounded >= 45 ? "보통" : "낮음";
                     String date = m.getScheduledAt() != null ? m.getScheduledAt().toLocalDate().toString()
                             : (m.getCreatedAt() != null ? m.getCreatedAt().toLocalDate().toString() : null);
-                    return new MemberInsightResponse.TrendPoint(
+     
+                .toList();
+
+        return new PageImpl<>(content, pageable, meetingPage.getTotalElements());
+    }
+
+    @Transactional(readOnly = true)
+    public PortfolioResponse getPortfolio(Long memberId) {
+        Pageable recent = PageRequest.of(0, 50, Sort.by(Sort.Direction.DESC, "createdAt"));
+        List<Meeting> meetings = meetingRepository.findByMemberId(memberId, recent).getContent();
+        if (meetings.isEmpty()) return new Portfolio               return new MemberInsightResponse.TrendPoint(
                             roundByMeeting.getOrDefault(m.getId(), 0), date, rounded, level,
                             titleByMeeting.getOrDefault(m.getId(), "1:1 미팅"));
                 })
