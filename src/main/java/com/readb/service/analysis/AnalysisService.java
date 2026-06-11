@@ -1914,6 +1914,8 @@ public class AnalysisService {
         List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
         List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
         Map<Long, Integer> roundByMeeting = buildRoundMap(meetings);
+        Map<Long, String> titleByMeeting = meetings.stream()
+                .collect(Collectors.toMap(Meeting::getId, m -> m.getTitle() != null ? m.getTitle() : "1:1 미팅"));
 
         Map<Long, Analysis> analysisByMeeting = meetingIds.isEmpty() ? Map.of()
                 : analysisRepository.findByMeetingIdIn(meetingIds).stream()
@@ -1922,16 +1924,21 @@ public class AnalysisService {
                 : surveyRepository.findByMeetingIdIn(meetingIds).stream()
                         .collect(Collectors.toMap(Survey::getMeetingId, s -> s));
 
-        // 날짜별 약속 (이행/미이행)
-        List<MemberInsightResponse.PromiseItem> promises = promiseRepository
-                .findByOwnerIdOrderByCreatedAtDesc(memberId).stream()
-                .map(p -> new MemberInsightResponse.PromiseItem(
-                        p.getId(), p.getContent(),
-                        p.getStatus() == PromiseStatus.DONE ? "DONE"
-                                : p.getStatus() == PromiseStatus.MISSED ? "OVERDUE" : "PENDING",
-                        p.getCreatedAt() != null ? p.getCreatedAt().toLocalDate().toString() : null,
-                        roundByMeeting.getOrDefault(p.getMeetingId(), 0)))
-                .toList();
+        // 해당 미팅들의 모든 약속 (멤버 + 리더) - meetingId 기준으로 조회
+        List<MemberInsightResponse.PromiseItem> promises = meetingIds.isEmpty() ? List.of()
+                : promiseRepository.findByMeetingIdIn(meetingIds).stream()
+                        .sorted(java.util.Comparator.comparing(
+                                p -> p.getCreatedAt() != null ? p.getCreatedAt() : java.time.LocalDateTime.MIN,
+                                java.util.Comparator.reverseOrder()))
+                        .map(p -> new MemberInsightResponse.PromiseItem(
+                                p.getId(), p.getContent(),
+                                p.getStatus() == PromiseStatus.DONE ? "DONE"
+                                        : p.getStatus() == PromiseStatus.MISSED ? "OVERDUE" : "PENDING",
+                                p.getCreatedAt() != null ? p.getCreatedAt().toLocalDate().toString() : null,
+                                roundByMeeting.getOrDefault(p.getMeetingId(), 0),
+                                titleByMeeting.getOrDefault(p.getMeetingId(), "1:1 미팅"),
+                                memberId.equals(p.getOwnerId()) ? "MEMBER" : "LEADER"))
+                        .toList();
 
         // 누적 next action plan (날짜별)
         List<MemberInsightResponse.ActionPlanItem> actionPlans = meetingIds.isEmpty() ? List.of()
@@ -1939,7 +1946,8 @@ public class AnalysisService {
                         .map(ap -> new MemberInsightResponse.ActionPlanItem(
                                 ap.getId(), ap.getContent(), ap.isCompleted(),
                                 ap.getCreatedAt() != null ? ap.getCreatedAt().toLocalDate().toString() : null,
-                                roundByMeeting.getOrDefault(ap.getMeetingId(), 0)))
+                                roundByMeeting.getOrDefault(ap.getMeetingId(), 0),
+                                titleByMeeting.getOrDefault(ap.getMeetingId(), "1:1 미팅")))
                         .toList();
 
         // 상태 추세 (회차 오름차순, 내부 용어 없이 health 점수 + 라벨)
@@ -1957,7 +1965,8 @@ public class AnalysisService {
                     String date = m.getScheduledAt() != null ? m.getScheduledAt().toLocalDate().toString()
                             : (m.getCreatedAt() != null ? m.getCreatedAt().toLocalDate().toString() : null);
                     return new MemberInsightResponse.TrendPoint(
-                            roundByMeeting.getOrDefault(m.getId(), 0), date, rounded, level);
+                            roundByMeeting.getOrDefault(m.getId(), 0), date, rounded, level,
+                            titleByMeeting.getOrDefault(m.getId(), "1:1 미팅"));
                 })
                 .filter(Objects::nonNull)
                 .toList();
