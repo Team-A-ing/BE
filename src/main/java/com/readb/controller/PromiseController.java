@@ -4,6 +4,7 @@ import com.readb.common.response.ApiResponse;
 import com.readb.domain.promise.Promise;
 import com.readb.dto.promise.FulfillmentRateResponse;
 import com.readb.dto.promise.OverduePromiseResponse;
+import com.readb.dto.promise.PromiseReminderResponse;
 import com.readb.service.analysis.PromiseService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -29,6 +30,12 @@ public class PromiseController {
     public ApiResponse<FulfillmentRateResponse> getFulfillmentRate(
             @AuthenticationPrincipal Long userId) {
         return ApiResponse.ok(promiseService.getFulfillmentRate(userId));
+    }
+
+    @GetMapping("/reminders")
+    public ApiResponse<PromiseReminderResponse> getReminders(
+            @AuthenticationPrincipal Long userId) {
+        return ApiResponse.ok(promiseService.getReminders(userId));
     }
 
     @GetMapping("/overdue")
