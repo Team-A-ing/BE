@@ -8,6 +8,7 @@ import com.readb.domain.promise.PromiseStatus;
 import com.readb.domain.user.User;
 import com.readb.dto.promise.FulfillmentRateResponse;
 import com.readb.dto.promise.OverduePromiseResponse;
+import com.readb.dto.promise.PromiseReminderResponse;
 import com.readb.repository.MeetingRepository;
 import com.readb.repository.PromiseRepository;
 import com.readb.repository.UserRepository;
@@ -15,7 +16,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -72,6 +79,46 @@ public class PromiseService {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
         promise.complete();
+    }
+
+    // 리더 본인이 등록한 PENDING 약속 중 기한 초과/임박(7일 이내) 항목.
+    // 미이행 약속은 다음 미팅 pre-briefing의 recommendedTopics에 자동 반영되므로,
+    // 이 응답은 대시보드 리마인더 표시 용도.
+    @Transactional(readOnly = true)
+    public PromiseReminderResponse getReminders(Long ownerId) {
+        List<Promise> pendings = promiseRepository
+                .findByOwnerIdAndStatusOrderByCreatedAtDesc(ownerId, PromiseStatus.PENDING);
+        List<Promise> withDeadline = pendings.stream().filter(p -> p.getDeadline() != null).toList();
+        if (withDeadline.isEmpty()) return new PromiseReminderResponse(List.of(), List.of());
+
+        List<Long> meetingIds = withDeadline.stream().map(Promise::getMeetingId).distinct().toList();
+        Map<Long, Meeting> meetingById = meetingRepository.findAllById(meetingIds)
+                .stream().collect(Collectors.toMap(Meeting::getId, m -> m));
+        List<Long> memberIds = meetingById.values().stream().map(Meeting::getMemberId).distinct().toList();
+        Map<Long, String> memberNames = userRepository.findAllById(memberIds)
+                .stream().collect(Collectors.toMap(User::getId, User::getName));
+
+        LocalDate today = LocalDate.now();
+        LocalDate soonLimit = today.plusDays(7);
+        List<PromiseReminderResponse.ReminderItem> overdue = new ArrayList<>();
+        List<PromiseReminderResponse.ReminderItem> dueSoon = new ArrayList<>();
+
+        for (Promise p : withDeadline) {
+            Meeting meeting = meetingById.get(p.getMeetingId());
+            String memberName = meeting == null ? ""
+                    : memberNames.getOrDefault(meeting.getMemberId(), "");
+            String meetingTitle = (meeting == null || meeting.getTitle() == null)
+                    ? "1:1 미팅" : meeting.getTitle();
+            long daysLeft = ChronoUnit.DAYS.between(today, p.getDeadline());
+            PromiseReminderResponse.ReminderItem item = new PromiseReminderResponse.ReminderItem(
+                    p.getId(), p.getContent(), p.getDeadline().toString(),
+                    daysLeft, memberName, meetingTitle);
+            if (p.getDeadline().isBefore(today)) overdue.add(item);
+            else if (!p.getDeadline().isAfter(soonLimit)) dueSoon.add(item);
+        }
+        overdue.sort(Comparator.comparing(PromiseReminderResponse.ReminderItem::dueDate));
+        dueSoon.sort(Comparator.comparing(PromiseReminderResponse.ReminderItem::dueDate));
+        return new PromiseReminderResponse(overdue, dueSoon);
     }
 
     @Transactional(readOnly = true)
