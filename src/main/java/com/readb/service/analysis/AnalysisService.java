@@ -365,7 +365,7 @@ public class AnalysisService {
         Map<String, Object> step3 = parseJson(step3Raw);
         log.info("Step3(GPT-mini) 완료. meetingId={}", meetingId);
 
-        transactionTemplate.executeWithoutResult(tx -> persistResults(meetingId, meeting, step2, step3));
+        transactionTemplate.executeWithoutResult(tx -> persistResults(meetingId, meeting, step2, step3, durationSec));
     }
 
     @Transactional(readOnly = true)
@@ -397,9 +397,10 @@ public class AnalysisService {
                 : promiseRepository.findByMeetingIdIn(prevMeetings.stream().map(Meeting::getId).toList());
     }
 
-    protected void persistResults(Long meetingId, Meeting meeting, Map<String, Object> step2, Map<String, Object> step3) {
+    protected void persistResults(Long meetingId, Meeting meeting, Map<String, Object> step2, Map<String, Object> step3,
+                                  Integer durationSec) {
         analysisRepository.findByMeetingId(meetingId).ifPresent(analysisRepository::delete);
-        analysisRepository.save(buildAnalysis(meetingId, step2, step3));
+        analysisRepository.save(buildAnalysis(meetingId, step2, step3, durationSec));
 
         promiseRepository.deleteByMeetingId(meetingId);
         savePromises(meetingId, meeting, step2);
@@ -509,11 +510,38 @@ public class AnalysisService {
         boolean isEmpty() { return meetingCount == 0; }
     }
 
+    // Safety Score 변환표 (30분 정규화 발화 횟수 → 보너스). 인덱스 = 횟수, 마지막 값 = 4회+
+    private static final int[] V_BONUS = {0, 12, 18, 22, 24};
+    private static final int[] D_BONUS = {0, 11, 17, 20, 21};
+    private static final int[] I_BONUS = {0, 8, 12, 14, 15};
+    private static final double SAFETY_BASELINE = 40.0;
+
+    // safetyScore는 LLM 산수를 신뢰하지 않고 step2 발화 카운트로 서버에서 결정적으로 계산.
+    // (과거 LLM이 133점 등 범위 밖 값을 반환한 사례 있음)
+    private double computeSafetyScore(Map<String, Object> speechActs, Integer durationSec) {
+        int v = normalizeCount(listSize(speechActs != null ? speechActs.get("vulnerability") : null), durationSec);
+        int d = normalizeCount(listSize(speechActs != null ? speechActs.get("constructiveDissent") : null), durationSec);
+        int i = normalizeCount(listSize(speechActs != null ? speechActs.get("initiative") : null), durationSec);
+        double score = SAFETY_BASELINE + bonusOf(V_BONUS, v) + bonusOf(D_BONUS, d) + bonusOf(I_BONUS, i);
+        return Math.min(100.0, score);
+    }
+
+    // adjusted_count = round(raw × 30 ÷ 미팅분). 길이를 모르면 원본 카운트 사용.
+    private int normalizeCount(int rawCount, Integer durationSec) {
+        if (durationSec == null || durationSec < 60) return rawCount;
+        return (int) Math.round(rawCount * 30.0 / (durationSec / 60.0));
+    }
+
+    private static int bonusOf(int[] table, int count) {
+        return table[Math.min(Math.max(count, 0), table.length - 1)];
+    }
+
     @SuppressWarnings("unchecked")
-    private Analysis buildAnalysis(Long meetingId, Map<String, Object> step2, Map<String, Object> step3) {
+    private Analysis buildAnalysis(Long meetingId, Map<String, Object> step2, Map<String, Object> step3,
+                                   Integer durationSec) {
         return Analysis.builder()
                 .meetingId(meetingId)
-                .safetyScore(clamp(toDouble(step3.get("safetyScore")), 0.0, 100.0))
+                .safetyScore(computeSafetyScore((Map<String, Object>) step2.get("speechActs"), durationSec))
                 .alignmentGap(toDouble(step3.get("alignmentGap")))
                 .alignmentGapDetail((String) step3.get("alignmentGapDetail"))
                 .honestyGap(toDouble(step3.get("honestyGap")))
