@@ -542,7 +542,7 @@ public class AnalysisService {
                                    Integer durationSec) {
         return Analysis.builder()
                 .meetingId(meetingId)
-                .safetyScore(computeSafetyScore((Map<String, Object>) step2.get("speechActs"), durationSec))
+                .safetyScore(computeSafetyScore(step2.get("speechActs"), durationSec))
                 .alignmentGap(toDouble(step3.get("alignmentGap")))
                 .alignmentGapDetail((String) step3.get("alignmentGapDetail"))
                 .honestyGap(toDouble(step3.get("honestyGap")))
