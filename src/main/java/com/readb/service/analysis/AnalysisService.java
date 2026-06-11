@@ -2091,7 +2091,7 @@ public class AnalysisService {
                 .filter(u -> u.getRole() == UserRole.MEMBER)
                 .toList();
         if (members.isEmpty()) {
-            return new TeamPromiseSummaryResponse(List.of());
+            return new TeamPromiseSummaryResponse(null, List.of());
         }
 
         List<Long> memberIds = members.stream().map(User::getId).toList();
@@ -2102,8 +2102,9 @@ public class AnalysisService {
 
         // 회차 계산: 멤버별 전체 미팅을 1번에 조회해 메모리에서 id 순서대로 round 부여 (N+1 제거).
         // 1:1 미팅은 멤버당 단일 리더이므로 멤버별 그룹핑이 (리더, 멤버) 쌍과 동일하다.
+        List<Meeting> teamMeetings = meetingRepository.findByMemberIdInOrderByCreatedAtDesc(memberIds);
         Map<Long, Integer> roundByMeetingId = new java.util.HashMap<>();
-        meetingRepository.findByMemberIdInOrderByCreatedAtDesc(memberIds).stream()
+        teamMeetings.stream()
                 .collect(Collectors.groupingBy(Meeting::getMemberId))
                 .values()
                 .forEach(meetingsOfMember -> {
@@ -2140,7 +2141,8 @@ public class AnalysisService {
                                         status,
                                         p.getCreatedAt() != null ? p.getCreatedAt().toLocalDate().toString() : null,
                                         roundByMeetingId.getOrDefault(p.getMeetingId(), 0),
-                                        isCompleted
+                                        isCompleted,
+                                        null
                                 );
                             })
                             // 미완료를 위로, 완료된 항목을 아래로 정렬
@@ -2160,7 +2162,65 @@ public class AnalysisService {
                 .filter(Objects::nonNull)
                 .toList();
 
-        return new TeamPromiseSummaryResponse(memberSummaries);
+        return new TeamPromiseSummaryResponse(
+                buildLeaderPromiseSummary(teamId, members, teamMeetings, roundByMeetingId),
+                memberSummaries);
+    }
+
+    // 리더가 멤버들과의 미팅에서 한 약속 종합 — 미이행 약속 패널 최상단 표시용
+    private TeamPromiseSummaryResponse.MemberPromiseSummary buildLeaderPromiseSummary(
+            Long teamId, List<User> members, List<Meeting> teamMeetings, Map<Long, Integer> roundByMeetingId) {
+        Long leaderId = teamRepository.findById(teamId).map(t -> t.getLeaderId()).orElse(null);
+        if (leaderId == null) return null;
+
+        List<Promise> leaderPromises = promiseRepository.findByOwnerIdOrderByCreatedAtDesc(leaderId);
+        if (leaderPromises.isEmpty()) return null;
+
+        Map<Long, String> memberNameById = members.stream()
+                .collect(Collectors.toMap(User::getId, User::getName));
+        Map<Long, Long> memberIdByMeetingId = teamMeetings.stream()
+                .collect(Collectors.toMap(Meeting::getId, Meeting::getMemberId, (a, b) -> a));
+
+        long completed = leaderPromises.stream().filter(p -> p.getStatus() == PromiseStatus.DONE).count();
+        long pending = leaderPromises.stream().filter(p -> p.getStatus() == PromiseStatus.PENDING).count();
+        long overdue = leaderPromises.stream().filter(p -> p.getStatus() == PromiseStatus.MISSED).count();
+
+        LocalDate today = LocalDate.now();
+        List<TeamPromiseSummaryResponse.PromiseSummaryItem> items = leaderPromises.stream()
+                .filter(p -> p.getStatus() == PromiseStatus.PENDING
+                        || p.getStatus() == PromiseStatus.MISSED
+                        || (p.getStatus() == PromiseStatus.DONE
+                            && p.getCompletedAt() != null
+                            && p.getCompletedAt().toLocalDate().isEqual(today)))
+                .map(p -> {
+                    boolean isCompleted = p.getStatus() == PromiseStatus.DONE;
+                    String status = isCompleted ? "PENDING"
+                            : (p.getStatus() == PromiseStatus.MISSED ? "OVERDUE" : "PENDING");
+                    Long partnerId = memberIdByMeetingId.get(p.getMeetingId());
+                    return new TeamPromiseSummaryResponse.PromiseSummaryItem(
+                            String.valueOf(p.getId()),
+                            p.getContent(),
+                            p.getContext(),
+                            status,
+                            p.getCreatedAt() != null ? p.getCreatedAt().toLocalDate().toString() : null,
+                            roundByMeetingId.getOrDefault(p.getMeetingId(), 0),
+                            isCompleted,
+                            partnerId != null ? memberNameById.getOrDefault(partnerId, null) : null
+                    );
+                })
+                .sorted(java.util.Comparator.comparing(TeamPromiseSummaryResponse.PromiseSummaryItem::isCompleted))
+                .toList();
+
+        if (items.isEmpty()) return null;
+
+        String leaderName = userRepository.findById(leaderId).map(User::getName).orElse("리더");
+        return new TeamPromiseSummaryResponse.MemberPromiseSummary(
+                String.valueOf(leaderId),
+                leaderName,
+                items,
+                new TeamPromiseSummaryResponse.Stats(
+                        leaderPromises.size(), (int) completed, (int) pending, (int) overdue)
+        );
     }
 
     // 팀 단위: 멤버별 최신 미팅에서 나온 '미완료' 액션 플랜을 묶어 반환.

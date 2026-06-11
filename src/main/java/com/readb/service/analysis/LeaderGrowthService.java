@@ -1,19 +1,29 @@
 package com.readb.service.analysis;
 
+import com.readb.domain.actionplan.ActionPlan;
 import com.readb.domain.analysis.Analysis;
 import com.readb.domain.meeting.Meeting;
 import com.readb.domain.promise.Promise;
 import com.readb.domain.promise.PromiseStatus;
+import com.readb.domain.user.User;
+import com.readb.domain.user.UserRole;
 import com.readb.dto.leader.LeaderGrowthResponse;
+import com.readb.repository.ActionPlanRepository;
 import com.readb.repository.AnalysisRepository;
 import com.readb.repository.MeetingRepository;
 import com.readb.repository.PromiseRepository;
+import com.readb.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -29,6 +39,8 @@ public class LeaderGrowthService {
     private final MeetingRepository meetingRepository;
     private final AnalysisRepository analysisRepository;
     private final PromiseRepository promiseRepository;
+    private final ActionPlanRepository actionPlanRepository;
+    private final UserRepository userRepository;
 
     @Transactional(readOnly = true)
     public LeaderGrowthResponse getLeaderGrowth(Long leaderId) {
@@ -39,20 +51,22 @@ public class LeaderGrowthService {
                 : analysisRepository.findByMeetingIdIn(meetingIds)
                         .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
 
-        // 최근 6개월 월별 집계 — 분석 완료된 미팅이 있는 달만 포함
+        // 최근 6개월 월별 집계
         YearMonth from = YearMonth.now().minusMonths(TREND_MONTHS - 1);
-        Map<YearMonth, List<Analysis>> byMonth = new TreeMap<>();
+        Map<YearMonth, List<Analysis>> analyzedByMonth = new TreeMap<>();
+        Map<YearMonth, Integer> meetingCountByMonth = new TreeMap<>();
         for (Meeting m : meetings) {
             YearMonth ym = YearMonth.from(m.getCreatedAt());
             if (ym.isBefore(from)) continue;
+            meetingCountByMonth.merge(ym, 1, Integer::sum);
             Analysis a = analysisByMeeting.get(m.getId());
             if (a == null) continue;
-            byMonth.computeIfAbsent(ym, k -> new ArrayList<>()).add(a);
+            analyzedByMonth.computeIfAbsent(ym, k -> new ArrayList<>()).add(a);
         }
 
         List<LeaderGrowthResponse.MonthlyTrendPoint> talkRatioTrend = new ArrayList<>();
         List<LeaderGrowthResponse.MonthlyTrendPoint> safetyTrend = new ArrayList<>();
-        for (Map.Entry<YearMonth, List<Analysis>> e : byMonth.entrySet()) {
+        for (Map.Entry<YearMonth, List<Analysis>> e : analyzedByMonth.entrySet()) {
             String month = e.getKey().toString();
 
             List<Integer> ratios = e.getValue().stream()
@@ -79,6 +93,12 @@ public class LeaderGrowthService {
             }
         }
 
+        // 월별 1on1 운영 횟수 (분석 여부 무관 — 규칙성 지표)
+        List<LeaderGrowthResponse.MonthlyTrendPoint> monthlyMeetings = meetingCountByMonth.entrySet().stream()
+                .map(e -> new LeaderGrowthResponse.MonthlyTrendPoint(
+                        e.getKey().toString(), e.getValue(), e.getValue()))
+                .toList();
+
         // 리더 본인이 등록한 약속 이행 통계
         List<Promise> promises = promiseRepository.findByOwnerIdOrderByCreatedAtDesc(leaderId);
         int total = promises.size();
@@ -89,8 +109,68 @@ public class LeaderGrowthService {
         LeaderGrowthResponse.PromiseStats promiseStats =
                 new LeaderGrowthResponse.PromiseStats(total, done, missed, pending, doneRate);
 
-        return new LeaderGrowthResponse(talkRatioTrend, safetyTrend, promiseStats,
+        // 코칭 실행률: 시스템이 제안한 액션 플랜 중 완료 비율 (리더의 코칭 수용성)
+        List<ActionPlan> plans = meetingIds.isEmpty() ? List.of()
+                : actionPlanRepository.findByMeetingIdInOrderByIdAsc(meetingIds);
+        int planTotal = plans.size();
+        int planCompleted = (int) plans.stream().filter(ActionPlan::isCompleted).count();
+        double executionRate = planTotal == 0 ? 0.0
+                : Math.round((double) planCompleted / planTotal * 1000.0) / 10.0;
+        LeaderGrowthResponse.CoachingExecution coachingExecution =
+                new LeaderGrowthResponse.CoachingExecution(planTotal, planCompleted, executionRate);
+
+        return new LeaderGrowthResponse(
+                buildKeyInsight(talkRatioTrend, safetyTrend),
+                talkRatioTrend, safetyTrend, monthlyMeetings,
+                promiseStats, coachingExecution,
+                buildMemberCadence(leaderId, meetings),
                 buildHighlights(talkRatioTrend, safetyTrend, promiseStats));
+    }
+
+    // 행동(발화 비율)과 결과(팀 신호)를 한 문장으로 연결 — 두 추이 모두 2개월 이상일 때만
+    private String buildKeyInsight(List<LeaderGrowthResponse.MonthlyTrendPoint> talkRatioTrend,
+                                   List<LeaderGrowthResponse.MonthlyTrendPoint> safetyTrend) {
+        if (talkRatioTrend.size() < 2 || safetyTrend.size() < 2) return null;
+        double rFirst = talkRatioTrend.get(0).value();
+        double rLast = talkRatioTrend.get(talkRatioTrend.size() - 1).value();
+        double sFirst = safetyTrend.get(0).value();
+        double sLast = safetyTrend.get(safetyTrend.size() - 1).value();
+        double sDiff = Math.round((sLast - sFirst) * 10.0) / 10.0;
+        return String.format(
+                "리더 발화 비율이 %.0f%% → %.0f%%로 변하는 동안, 팀의 솔직한 발화 신호는 %.1f → %.1f(%s%.1f)로 움직였습니다.",
+                rFirst, rLast, sFirst, sLast, sDiff >= 0 ? "+" : "", sDiff);
+    }
+
+    // 멤버별 마지막 1on1 경과일 — 오래된 순(관심 필요한 멤버 먼저), 미팅 없으면 최상단
+    private List<LeaderGrowthResponse.MemberCadence> buildMemberCadence(Long leaderId, List<Meeting> meetings) {
+        Long teamId = userRepository.findById(leaderId).map(User::getTeamId).orElse(null);
+        if (teamId == null) return List.of();
+
+        List<User> members = userRepository.findByTeamId(teamId).stream()
+                .filter(u -> u.getRole() == UserRole.MEMBER)
+                .toList();
+        if (members.isEmpty()) return List.of();
+
+        // meetings는 createdAt 내림차순 — 멤버별 첫 등장이 가장 최근 미팅
+        Map<Long, Meeting> latestByMember = new LinkedHashMap<>();
+        meetings.forEach(m -> latestByMember.putIfAbsent(m.getMemberId(), m));
+
+        LocalDate today = LocalDate.now();
+        return members.stream()
+                .map(member -> {
+                    Meeting last = latestByMember.get(member.getId());
+                    if (last == null) {
+                        return new LeaderGrowthResponse.MemberCadence(member.getId(), member.getName(), null, null);
+                    }
+                    LocalDateTime at = last.getScheduledAt() != null ? last.getScheduledAt() : last.getCreatedAt();
+                    LocalDate date = at.toLocalDate();
+                    return new LeaderGrowthResponse.MemberCadence(
+                            member.getId(), member.getName(), date.toString(),
+                            ChronoUnit.DAYS.between(date, today));
+                })
+                .sorted(Comparator.comparing(LeaderGrowthResponse.MemberCadence::daysSinceLastMeeting,
+                        Comparator.nullsFirst(Comparator.reverseOrder())))
+                .toList();
     }
 
     // Fact-Based 원칙: 관찰된 수치 변화만 서술, 해석 라벨 없음
