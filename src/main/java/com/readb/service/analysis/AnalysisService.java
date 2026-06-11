@@ -1854,7 +1854,7 @@ public class AnalysisService {
         int achievementCount = (int) events.stream()
                 .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT).count();
         int leaderEndorsementCount = (int) events.stream()
-                .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT).count();
+                .filter(e -> e.getEventType() == CareerEventType.LEADER_ENDORSEMENT).count();
 
         int contributionPercentile = computeContributionPercentile(memberId, member.getTeamId());
 
