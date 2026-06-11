@@ -1323,17 +1323,23 @@ public class AnalysisService {
 
         List<Long> memberIds = members.stream().map(User::getId).toList();
 
-        // 멤버별 최신 meetingId 추출 — 1 쿼리
+        List<Meeting> allMeetings = meetingRepository.findByMemberIdInOrderByCreatedAtDesc(memberIds);
+        if (allMeetings.isEmpty()) return List.of();
+
+        Map<Long, Analysis> analysisByMeetingId = analysisRepository.findByMeetingIdIn(
+                        allMeetings.stream().map(Meeting::getId).toList())
+                .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
+
+        // 멤버별 "분석이 완료된" 최신 meetingId — 새로 생성만 되고 분석 전인 미팅이 있어도
+        // 직전 분석 결과로 레이더에 계속 표시되도록 함
         Map<Long, Long> latestMeetingIdByMember = new LinkedHashMap<>();
-        meetingRepository.findByMemberIdInOrderByCreatedAtDesc(memberIds)
+        allMeetings.stream()
+                .filter(m -> analysisByMeetingId.containsKey(m.getId()))
                 .forEach(m -> latestMeetingIdByMember.putIfAbsent(m.getMemberId(), m.getId()));
 
         List<Long> latestMeetingIds = new ArrayList<>(latestMeetingIdByMember.values());
         if (latestMeetingIds.isEmpty()) return List.of();
 
-        // bulk 조회 — 각 1 쿼리
-        Map<Long, Analysis> analysisByMeetingId = analysisRepository.findByMeetingIdIn(latestMeetingIds)
-                .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
         Map<Long, Survey> surveyByMeetingId = surveyRepository.findByMeetingIdIn(latestMeetingIds)
                 .stream().collect(Collectors.toMap(Survey::getMeetingId, s -> s));
 
