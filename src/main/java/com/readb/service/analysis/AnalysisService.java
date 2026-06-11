@@ -1853,17 +1853,26 @@ public class AnalysisService {
         List<CareerEvent> events = careerEventRepository.findByUserIdOrderByOccurredAtDesc(memberId);
         int achievementCount = (int) events.stream()
                 .filter(e -> e.getEventType() == CareerEventType.ACHIEVEMENT).count();
-        int leaderEndorsementCount = (int) events.stream()
-                .filter(e -> e.getEventType() == CareerEventType.LEADER_ENDORSEMENT).count();
 
-        int contributionPercentile = computeContributionPercentile(memberId, member.getTeamId());
+        List<com.readb.domain.promise.Promise> memberPromises =
+                promiseRepository.findByOwnerIdOrderByCreatedAtDesc(memberId);
+        double promiseFulfillmentRate = memberPromises.isEmpty() ? 0.0
+                : Math.round((double) memberPromises.stream()
+                        .filter(p -> p.getStatus() == com.readb.domain.promise.PromiseStatus.DONE).count()
+                        / memberPromises.size() * 1000.0) / 10.0;
+
+        List<Long> meetingIds = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId)
+                .stream().map(Meeting::getId).toList();
+        int completedActionCount = meetingIds.isEmpty() ? 0
+                : (int) actionPlanRepository.findByMeetingIdInOrderByIdAsc(meetingIds).stream()
+                        .filter(ap -> ap.isCompleted()).count();
 
         String aiSummary = buildAiSummary(memberId);
 
         return new CareerStatsResponse(
                 memberId, member.getName(), member.getJobTitle(), teamName,
-                totalMeetings, achievementCount, leaderEndorsementCount,
-                contributionPercentile, aiSummary);
+                totalMeetings, achievementCount, promiseFulfillmentRate,
+                completedActionCount, aiSummary);
     }
 
     @Transactional(readOnly = true)

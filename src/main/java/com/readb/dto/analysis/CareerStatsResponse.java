@@ -7,7 +7,7 @@ public record CareerStatsResponse(
         String teamName,
         int totalMeetings,
         int achievementCount,
-        int leaderEndorsementCount,
-        int contributionPercentile,
+        double promiseFulfillmentRate,
+        int completedActionCount,
         String aiSummary
 ) {}
