@@ -1204,8 +1204,13 @@ public class AnalysisService {
 
         Map<Long, Analysis> analysisByMeeting = analysisRepository.findByMeetingIdIn(meetingIds)
                 .stream().collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
+        // 미팅의 멤버 본인이 제출한 서베이만 사용 — 타인(리더 등) 제출분이 섞이면 toMap Duplicate key로 500 발생
+        Map<Long, Long> memberIdByMeeting = meetings.stream()
+                .collect(Collectors.toMap(Meeting::getId, Meeting::getMemberId));
         Map<Long, Survey> surveyByMeeting = surveyRepository.findByMeetingIdIn(meetingIds)
-                .stream().collect(Collectors.toMap(Survey::getMeetingId, s -> s));
+                .stream()
+                .filter(s -> Objects.equals(s.getMemberId(), memberIdByMeeting.get(s.getMeetingId())))
+                .collect(Collectors.toMap(Survey::getMeetingId, s -> s, (a, b) -> a));
 
         // 미팅별 teamHealthScore = safetyScore×0.6 + surveyScore×0.4 (서베이 없으면 safetyScore 단독)
         record ScoredMeeting(YearMonth month, double health, double safety, Double survey,
@@ -1369,8 +1374,11 @@ public class AnalysisService {
         List<Long> latestMeetingIds = new ArrayList<>(latestMeetingIdByMember.values());
         if (latestMeetingIds.isEmpty()) return List.of();
 
+        // 미팅의 멤버 본인이 제출한 서베이만 사용 — 타인(리더 등) 제출분이 섞이면 toMap Duplicate key로 500 발생
         Map<Long, Survey> surveyByMeetingId = surveyRepository.findByMeetingIdIn(latestMeetingIds)
-                .stream().collect(Collectors.toMap(Survey::getMeetingId, s -> s));
+                .stream()
+                .filter(s -> Objects.equals(latestMeetingIdByMember.get(s.getMemberId()), s.getMeetingId()))
+                .collect(Collectors.toMap(Survey::getMeetingId, s -> s, (a, b) -> a));
 
         Map<Long, User> userById = members.stream().collect(Collectors.toMap(User::getId, u -> u));
         List<RadarDataPoint> result = new ArrayList<>();
@@ -1977,9 +1985,11 @@ public class AnalysisService {
         Map<Long, Analysis> analysisByMeeting = meetingIds.isEmpty() ? Map.of()
                 : analysisRepository.findByMeetingIdIn(meetingIds).stream()
                         .collect(Collectors.toMap(Analysis::getMeetingId, a -> a));
+        // 미팅의 멤버 본인이 제출한 서베이만 사용 — 타인(리더 등) 제출분이 섞이면 toMap Duplicate key로 500 발생
         Map<Long, Survey> surveyByMeeting = meetingIds.isEmpty() ? Map.of()
                 : surveyRepository.findByMeetingIdIn(meetingIds).stream()
-                        .collect(Collectors.toMap(Survey::getMeetingId, s -> s));
+                        .filter(s -> memberId.equals(s.getMemberId()))
+                        .collect(Collectors.toMap(Survey::getMeetingId, s -> s, (a, b) -> a));
 
         // 해당 미팅들의 모든 약속 (멤버 + 리더) - meetingId 기준으로 조회
         List<MemberInsightResponse.PromiseItem> promises = meetingIds.isEmpty() ? List.of()
