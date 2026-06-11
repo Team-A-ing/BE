@@ -41,8 +41,9 @@ public class User {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
-    public void updateProfile(String name) {
+    public void updateProfile(String name, String jobTitle) {
         this.name = name;
+        if (jobTitle != null) this.jobTitle = jobTitle.isBlank() ? null : jobTitle.trim();
     }
 
     public void assignTeam(Long teamId) {
