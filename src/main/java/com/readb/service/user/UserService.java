@@ -29,7 +29,7 @@ public class UserService {
     @Transactional
     public UserProfileResponse updateMyProfile(Long userId, UserUpdateRequest request) {
         User user = findUser(userId);
-        user.updateProfile(request.name());
+        user.updateProfile(request.name(), request.jobTitle());
         Team team = user.getTeamId() != null ? teamRepository.findById(user.getTeamId()).orElse(null) : null;
         return UserProfileResponse.from(user, team);
     }
