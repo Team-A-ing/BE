@@ -27,7 +27,7 @@ EMAIL            = "hleader@gmail.com"
 PASSWORD         = "test1234!"
 MEETING_ID       = 85
 SERIAL_PORT      = "COM8"             # 장치관리자에서 확인한 포트
-LEADER_THRESHOLD = 50.0               # leaderRatio >= 50 → 초록, < 50 → 빨강
+LEADER_THRESHOLD = 70.0               # leaderRatio >= 70 → 빨강 (리더 과다), < 70 → 초록 (균형)
 # ──────────────────────────────────────────────────────────
 
 
@@ -59,11 +59,11 @@ def sse_listener(token: str, ser: serial.Serial):
                 leader_ratio = data.get("leaderRatio", 0)
                 member_ratio = data.get("memberRatio", 0)
                 if leader_ratio >= LEADER_THRESHOLD:
-                    ser.write(b"G")
-                    print(f"[SSE] leaderRatio={leader_ratio:.1f}% → 초록불")
-                else:
                     ser.write(b"R")
-                    print(f"[SSE] leaderRatio={leader_ratio:.1f}% → 빨간불")
+                    print(f"[SSE] leaderRatio={leader_ratio:.1f}% → 빨간불 (리더 과다)")
+                else:
+                    ser.write(b"G")
+                    print(f"[SSE] leaderRatio={leader_ratio:.1f}% → 초록불 (균형)")
 
 
 def post_audio(url: str, token: str, filepath: str):
