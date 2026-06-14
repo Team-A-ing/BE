@@ -126,7 +126,7 @@ public class MeetingService {
             // 멤버는 본인이 멤버로 참여한 '리더와의 1on1'만 본다.
             // leaderId == memberId인 셀프 미팅(테스트로 같은 계정이 리더가 된 경우)은 제외.
             meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(userId).stream()
-                    .filter(m -> !m.getLeaderId().equals(userId))
+                    .filter(m -> !userId.equals(m.getLeaderId()))
                     .toList();
         } else {
             meetings = Stream.concat(
