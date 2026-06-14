@@ -56,4 +56,9 @@ public class Promise {
         this.status = PromiseStatus.DONE;
         this.completedAt = LocalDateTime.now();
     }
+
+    public void incomplete() {
+        this.status = PromiseStatus.PENDING;
+        this.completedAt = null;
+    }
 }

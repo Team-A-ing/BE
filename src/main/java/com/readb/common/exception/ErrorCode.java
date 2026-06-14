@@ -23,6 +23,7 @@ public enum ErrorCode {
 
     // Meeting / Recording
     MEETING_NOT_FOUND(HttpStatus.NOT_FOUND, "미팅을 찾을 수 없습니다."),
+    MEETING_NOT_CANCELABLE(HttpStatus.CONFLICT, "이미 진행되었거나 완료된 미팅은 취소할 수 없습니다."),
     ACTION_PLAN_NOT_FOUND(HttpStatus.NOT_FOUND, "액션 플랜을 찾을 수 없습니다."),
     PROMISE_NOT_FOUND(HttpStatus.NOT_FOUND, "약속을 찾을 수 없습니다."),
     RECORDING_NOT_FOUND(HttpStatus.NOT_FOUND, "녹음 파일을 찾을 수 없습니다."),

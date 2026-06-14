@@ -9,6 +9,7 @@ import com.readb.domain.meeting.MeetingStatus;
 import com.readb.domain.promise.Promise;
 import com.readb.domain.recording.Recording;
 import com.readb.domain.user.User;
+import com.readb.domain.user.UserRole;
 import com.readb.dto.meeting.ConfirmedAchievementResponse;
 import com.readb.dto.meeting.LeaderPromiseResponse;
 import com.readb.dto.meeting.MeetingCreateRequest;
@@ -89,6 +90,20 @@ public class MeetingService {
         analysisOrchestrator.startAnalysis(meetingId, payload);
     }
 
+    // 예정 시각에 진행되지 않은 미팅 취소 = 삭제. 회차는 동적 계산이라 이후 미팅 회차가 자동으로 1씩 감소한다.
+    @Transactional
+    public void cancelMeeting(Long meetingId, Long leaderId) {
+        Meeting meeting = findMeeting(meetingId);
+        validateOwner(meeting, leaderId);
+        if (meeting.getStatus() != MeetingStatus.CREATED) {
+            throw new BusinessException(ErrorCode.MEETING_NOT_CANCELABLE);
+        }
+        // 진행 전 미팅이라 녹음/분석/약속은 없고, 멤버가 미리 낸 서베이만 정리하면 됨
+        surveyRepository.deleteAll(surveyRepository.findByMeetingId(meetingId));
+        meetingRepository.delete(meeting);
+        log.info("Meeting cancelled (deleted). meetingId={}, leaderId={}", meetingId, leaderId);
+    }
+
     @Transactional(readOnly = true)
     public MeetingStatusResponse getStatus(Long meetingId) {
         Meeting meeting = findMeeting(meetingId);
@@ -107,6 +122,12 @@ public class MeetingService {
         List<Meeting> meetings;
         if (memberId != null) {
             meetings = meetingRepository.findByLeaderIdAndMemberIdOrderByCreatedAtDesc(userId, memberId);
+        } else if (userRepository.findById(userId).map(User::getRole).orElse(null) == UserRole.MEMBER) {
+            // 멤버는 본인이 멤버로 참여한 '리더와의 1on1'만 본다.
+            // leaderId == memberId인 셀프 미팅(테스트로 같은 계정이 리더가 된 경우)은 제외.
+            meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(userId).stream()
+                    .filter(m -> !userId.equals(m.getLeaderId()))
+                    .toList();
         } else {
             meetings = Stream.concat(
                     meetingRepository.findByLeaderIdOrderByCreatedAtDesc(userId).stream(),
@@ -152,6 +173,7 @@ public class MeetingService {
 
         return new MeetingDetailResponse(
                 meetingId,
+                meeting.getMemberId(),
                 round,
                 meeting.getScheduledAt(),
                 durationSec,
