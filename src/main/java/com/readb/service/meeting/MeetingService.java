@@ -90,6 +90,20 @@ public class MeetingService {
         analysisOrchestrator.startAnalysis(meetingId, payload);
     }
 
+    // 예정 시각에 진행되지 않은 미팅 취소 = 삭제. 회차는 동적 계산이라 이후 미팅 회차가 자동으로 1씩 감소한다.
+    @Transactional
+    public void cancelMeeting(Long meetingId, Long leaderId) {
+        Meeting meeting = findMeeting(meetingId);
+        validateOwner(meeting, leaderId);
+        if (meeting.getStatus() != MeetingStatus.CREATED) {
+            throw new BusinessException(ErrorCode.MEETING_NOT_CANCELABLE);
+        }
+        // 진행 전 미팅이라 녹음/분석/약속은 없고, 멤버가 미리 낸 서베이만 정리하면 됨
+        surveyRepository.deleteAll(surveyRepository.findByMeetingId(meetingId));
+        meetingRepository.delete(meeting);
+        log.info("Meeting cancelled (deleted). meetingId={}, leaderId={}", meetingId, leaderId);
+    }
+
     @Transactional(readOnly = true)
     public MeetingStatusResponse getStatus(Long meetingId) {
         Meeting meeting = findMeeting(meetingId);

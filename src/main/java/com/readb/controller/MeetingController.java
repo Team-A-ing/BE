@@ -63,6 +63,15 @@ public class MeetingController {
         return ApiResponse.ok(meetingService.getMeeting(meetingId, userId));
     }
 
+    // 미팅 취소(진행 전 미팅 삭제). 리더만 가능.
+    @DeleteMapping("/{meetingId}")
+    public ApiResponse<Void> cancelMeeting(
+            @PathVariable Long meetingId,
+            @AuthenticationPrincipal Long leaderId) {
+        meetingService.cancelMeeting(meetingId, leaderId);
+        return ApiResponse.ok();
+    }
+
     @GetMapping("/{meetingId}/status")
     public ApiResponse<MeetingStatusResponse> getStatus(@PathVariable Long meetingId) {
         return ApiResponse.ok(meetingService.getStatus(meetingId));
