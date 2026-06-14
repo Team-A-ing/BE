@@ -85,7 +85,7 @@ public class PromiseService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROMISE_NOT_FOUND));
         Meeting meeting = meetingRepository.findById(promise.getMeetingId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
-        if (!meeting.getLeaderId().equals(userId) && !meeting.getMemberId().equals(userId)) {
+        if (!userId.equals(meeting.getLeaderId()) && !userId.equals(meeting.getMemberId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
         return promise;
