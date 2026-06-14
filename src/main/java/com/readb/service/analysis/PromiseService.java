@@ -71,14 +71,24 @@ public class PromiseService {
 
     @Transactional
     public void completePromise(Long promiseId, Long userId) {
+        loadParticipantPromise(promiseId, userId).complete();
+    }
+
+    @Transactional
+    public void incompletePromise(Long promiseId, Long userId) {
+        loadParticipantPromise(promiseId, userId).incomplete();
+    }
+
+    // 약속 상태 변경은 해당 1on1의 참여자(리더 또는 멤버)만 가능
+    private Promise loadParticipantPromise(Long promiseId, Long userId) {
         Promise promise = promiseRepository.findById(promiseId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROMISE_NOT_FOUND));
         Meeting meeting = meetingRepository.findById(promise.getMeetingId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
-        if (!meeting.getLeaderId().equals(userId)) {
+        if (!meeting.getLeaderId().equals(userId) && !meeting.getMemberId().equals(userId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
-        promise.complete();
+        return promise;
     }
 
     // 리더 본인이 등록한 PENDING 약속 중 기한 초과/임박(7일 이내) 항목.

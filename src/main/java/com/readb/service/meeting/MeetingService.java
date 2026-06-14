@@ -9,6 +9,7 @@ import com.readb.domain.meeting.MeetingStatus;
 import com.readb.domain.promise.Promise;
 import com.readb.domain.recording.Recording;
 import com.readb.domain.user.User;
+import com.readb.domain.user.UserRole;
 import com.readb.dto.meeting.ConfirmedAchievementResponse;
 import com.readb.dto.meeting.LeaderPromiseResponse;
 import com.readb.dto.meeting.MeetingCreateRequest;
@@ -107,6 +108,12 @@ public class MeetingService {
         List<Meeting> meetings;
         if (memberId != null) {
             meetings = meetingRepository.findByLeaderIdAndMemberIdOrderByCreatedAtDesc(userId, memberId);
+        } else if (userRepository.findById(userId).map(User::getRole).orElse(null) == UserRole.MEMBER) {
+            // 멤버는 본인이 멤버로 참여한 '리더와의 1on1'만 본다.
+            // leaderId == memberId인 셀프 미팅(테스트로 같은 계정이 리더가 된 경우)은 제외.
+            meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(userId).stream()
+                    .filter(m -> !m.getLeaderId().equals(userId))
+                    .toList();
         } else {
             meetings = Stream.concat(
                     meetingRepository.findByLeaderIdOrderByCreatedAtDesc(userId).stream(),
@@ -152,6 +159,7 @@ public class MeetingService {
 
         return new MeetingDetailResponse(
                 meetingId,
+                meeting.getMemberId(),
                 round,
                 meeting.getScheduledAt(),
                 durationSec,

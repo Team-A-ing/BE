@@ -53,4 +53,12 @@ public class PromiseController {
         return ApiResponse.ok(null);
     }
 
+    @PatchMapping("/{promiseId}/incomplete")
+    public ApiResponse<Void> incompletePromise(
+            @PathVariable Long promiseId,
+            @AuthenticationPrincipal Long userId) {
+        promiseService.incompletePromise(promiseId, userId);
+        return ApiResponse.ok(null);
+    }
+
 }
