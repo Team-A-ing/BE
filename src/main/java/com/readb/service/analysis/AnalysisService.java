@@ -1968,7 +1968,11 @@ public class AnalysisService {
         User member = userRepository.findById(memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-        List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
+        // 리더와의 1on1만 회차 산정 대상 — leaderId == memberId인 셀프 미팅(테스트 데이터)은 제외해야
+        // 미팅 목록/상세의 회차(countByLeaderIdAndMemberId…)와 회차 번호가 일치한다.
+        List<Meeting> meetings = meetingRepository.findByMemberIdOrderByCreatedAtDesc(memberId).stream()
+                .filter(m -> !m.getLeaderId().equals(m.getMemberId()))
+                .toList();
         List<Long> meetingIds = meetings.stream().map(Meeting::getId).toList();
         Map<Long, Integer> roundByMeeting = buildRoundMap(meetings);
         Map<Long, String> titleByMeeting = meetings.stream()
