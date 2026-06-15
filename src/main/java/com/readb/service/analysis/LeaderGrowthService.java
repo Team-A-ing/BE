@@ -116,8 +116,24 @@ public class LeaderGrowthService {
         int planCompleted = (int) plans.stream().filter(ActionPlan::isCompleted).count();
         double executionRate = planTotal == 0 ? 0.0
                 : Math.round((double) planCompleted / planTotal * 1000.0) / 10.0;
+
+        // 이행/미이행 항목 목록 (어느 멤버 액션인지 함께) — 코칭 실행률 펼침 보기용
+        Map<Long, Long> memberIdByMeeting = meetings.stream()
+                .collect(Collectors.toMap(Meeting::getId, Meeting::getMemberId));
+        Map<Long, String> memberNameById = userRepository
+                .findAllById(memberIdByMeeting.values().stream().distinct().toList())
+                .stream().collect(Collectors.toMap(User::getId, User::getName));
+        java.util.function.Function<ActionPlan, LeaderGrowthResponse.CoachingPlanItem> toItem = p ->
+                new LeaderGrowthResponse.CoachingPlanItem(
+                        p.getId(), p.getContent(),
+                        memberNameById.getOrDefault(memberIdByMeeting.get(p.getMeetingId()), ""));
+        List<LeaderGrowthResponse.CoachingPlanItem> completedItems = plans.stream()
+                .filter(ActionPlan::isCompleted).map(toItem).toList();
+        List<LeaderGrowthResponse.CoachingPlanItem> pendingItems = plans.stream()
+                .filter(p -> !p.isCompleted()).map(toItem).toList();
         LeaderGrowthResponse.CoachingExecution coachingExecution =
-                new LeaderGrowthResponse.CoachingExecution(planTotal, planCompleted, executionRate);
+                new LeaderGrowthResponse.CoachingExecution(planTotal, planCompleted, executionRate,
+                        completedItems, pendingItems);
 
         return new LeaderGrowthResponse(
                 buildKeyInsight(talkRatioTrend, safetyTrend),

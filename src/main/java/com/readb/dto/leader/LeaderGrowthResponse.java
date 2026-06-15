@@ -16,7 +16,11 @@ public record LeaderGrowthResponse(
 
     public record PromiseStats(int total, int done, int missed, int pending, double doneRate) {}
 
-    public record CoachingExecution(int total, int completed, double executionRate) {}
+    public record CoachingExecution(int total, int completed, double executionRate,
+                                    List<CoachingPlanItem> completedItems,
+                                    List<CoachingPlanItem> pendingItems) {}
+
+    public record CoachingPlanItem(Long planId, String content, String memberName) {}
 
     public record MemberCadence(Long memberId, String memberName, String lastMeetingDate, Long daysSinceLastMeeting) {}
 }
