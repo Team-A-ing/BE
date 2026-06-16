@@ -15,7 +15,10 @@
  *
  * 필요 라이브러리 (Arduino IDE → 라이브러리 매니저):
  *   - ArduinoJson (Benoit Blanchon) v7+
- *   - LiquidCrystal I2C (Frank de Brabander)   // I2C LCD1602
+ *   - LiquidCrystal I2C (Frank de Brabander)   // ★ LCD 쓸 때만 (USE_LCD 정의 시)
+ *
+ * ★ LCD가 없으면 그대로 두면 됨 — 기본은 LED만으로 동작(라이브러리 설치 불필요).
+ *   LCD1602(I2C)가 있으면 아래 `// #define USE_LCD` 줄의 주석을 해제.
  *
  * 보드: ESP32 Dev Module
  *
@@ -31,8 +34,13 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+
+// ── LCD1602(I2C)가 있을 때만 아래 줄 주석 해제. 없으면 그대로 두면 LED만으로 동작 ──
+// #define USE_LCD
+#ifdef USE_LCD
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#endif
 
 // ═══════════════════════════════════════════════════════
 //  사용자 설정 (반드시 변경!)
@@ -44,8 +52,10 @@ const char* BACKEND_HOST  = "192.168.0.100";  // 서버 PC 내부 IP (같은 WiF
 const int   BACKEND_PORT  = 8080;
 // 미팅 ID 불필요 — 서버가 '현재 진행 중인 세션'을 알아서 돌려줌 (전원만 꽂으면 어떤 미팅이든 자동 추적)
 
+#ifdef USE_LCD
 // LCD I2C 주소 — 보통 0x27, 안 되면 0x3F
 #define LCD_ADDR 0x27
+#endif
 
 // ═══════════════════════════════════════════════════════
 //  핀
@@ -68,7 +78,9 @@ const double BAND_OK     = 50.0;   // <50  적정 (초록)
 const double BAND_WATCH  = 65.0;   // 50~65 관찰 (초록→노랑)
 const double BAND_WARN   = 75.0;   // 65~75 주의 (노랑→빨강=주황) / >75 과다(빨강)
 
+#ifdef USE_LCD
 LiquidCrystal_I2C lcd(LCD_ADDR, 16, 2);
+#endif
 
 // ─── 상태 ───────────────────────────────────────────
 unsigned long lastPollTime = 0;
@@ -139,7 +151,8 @@ void renderWhite(unsigned long now) {
   }
 }
 
-// ─── LCD ────────────────────────────────────────────
+// ─── LCD (USE_LCD 정의 시에만 실제 동작, 아니면 빈 함수) ──
+#ifdef USE_LCD
 void lcdShowBoot() {
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("ReadB Talk Ratio");
@@ -166,6 +179,11 @@ void lcdShowRatio() {
   lcd.setCursor(0, 1);
   for (int i = 0; i < 16; i++) lcd.write(i < blocks ? (uint8_t)255 : ' ');
 }
+#else
+inline void lcdShowBoot() {}
+inline void lcdShowWaiting() {}
+inline void lcdShowRatio() {}
+#endif
 
 // ─── WiFi ───────────────────────────────────────────
 void connectWiFi() {
@@ -233,9 +251,11 @@ void setup() {
   pinMode(WHITE_PIN, OUTPUT);
   ledsOff();
 
+#ifdef USE_LCD
   Wire.begin(21, 22);   // ESP32 기본 I2C: SDA=21, SCL=22
   lcd.init();
   lcd.backlight();
+#endif
   lcdShowBoot();
 
   connectWiFi();
