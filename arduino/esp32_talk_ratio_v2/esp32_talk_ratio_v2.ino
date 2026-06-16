@@ -259,6 +259,7 @@ void setup() {
   lcdShowBoot();
 
   connectWiFi();
+  WiFi.setAutoReconnect(true);
   lcdShowWaiting();
 }
 
