@@ -15,7 +15,9 @@ public record ActiveTalkRatioResponse(
     }
 
     public static ActiveTalkRatioResponse of(Long meetingId, double leaderRatio) {
-        double member = Math.round((100.0 - leaderRatio) * 10.0) / 10.0;
-        return new ActiveTalkRatioResponse(true, meetingId, leaderRatio, member);
+        // 두 비율 모두 소수점 1자리로 일관되게 반올림 → 합이 100.0으로 떨어지고 응답이 일관됨
+        double leader = Math.round(leaderRatio * 10.0) / 10.0;
+        double member = Math.round((100.0 - leader) * 10.0) / 10.0;
+        return new ActiveTalkRatioResponse(true, meetingId, leader, member);
     }
 }

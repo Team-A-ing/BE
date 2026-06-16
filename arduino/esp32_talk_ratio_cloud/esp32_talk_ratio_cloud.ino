@@ -58,7 +58,9 @@ const int WHITE_PIN = 32;
 // 동작 파라미터
 const unsigned long POLL_INTERVAL_MS = 2000;
 const int           HTTP_TIMEOUT_MS  = 4000;
-const unsigned long WIFI_LOST_RESTART_MS = 30000;  // 연결 끊김 30초 지속 시 재부팅(→포털 재진입)
+// 일시적 끊김은 백그라운드 자동 재연결에 맡기고, 아주 오래(10분) 끊겼을 때만 재부팅(→포털 재진입).
+// (장소 이동은 보통 전원을 껐다 켜므로 짧은 재부팅 타이머는 오히려 UX를 해침)
+const unsigned long WIFI_LOST_RESTART_MS = 600000;
 
 // 발화비율 밴드 (리더 %)
 const double BAND_OK    = 50.0;
@@ -72,6 +74,10 @@ double currentLeaderRatio = 0.0;
 double currentMemberRatio = 0.0;
 bool   sessionActive = false;
 bool   wifiOk = false;
+
+// HTTPS 연결 재사용 — 매 폴링마다 새 TLS 핸드셰이크(1~3초·메모리 부담)를 피하기 위해 전역으로 두고 Keep-Alive.
+WiFiClientSecure secureClient;
+HTTPClient       http;
 
 // ─── 유틸 / LED (v2와 동일) ─────────────────────────
 int clampPwm(double v) { return v < 0 ? 0 : (v > 255 ? 255 : (int)v); }
@@ -138,12 +144,8 @@ inline void lcdShowRatio() {}
 bool pollTalkRatio() {
   if (WiFi.status() != WL_CONNECTED) return false;
 
-  WiFiClientSecure client;
-  client.setInsecure();   // Railway 인증서 검증 생략 (단순화)
-
-  HTTPClient http;
-  http.setTimeout(HTTP_TIMEOUT_MS);
-  if (!http.begin(client, API_URL)) { Serial.println("[HTTP] begin fail"); return false; }
+  // 전역 secureClient/http 재사용 (Keep-Alive) — 매번 새 TLS 핸드셰이크 방지
+  if (!http.begin(secureClient, API_URL)) { Serial.println("[HTTP] begin fail"); return false; }
   http.addHeader("Accept", "application/json");
 
   int code = http.GET();
@@ -174,6 +176,11 @@ void setup() {
   pinMode(GREEN_PIN, OUTPUT); pinMode(YELLOW_PIN, OUTPUT);
   pinMode(RED_PIN, OUTPUT);   pinMode(WHITE_PIN, OUTPUT);
   ledsOff();
+
+  // HTTPS 클라이언트 1회 설정 후 재사용
+  secureClient.setInsecure();      // 인증서 검증 생략 (데모/내부용)
+  http.setReuse(true);             // 연결 재사용(Keep-Alive)
+  http.setTimeout(HTTP_TIMEOUT_MS);
 
 #ifdef USE_LCD
   Wire.begin(21, 22);
@@ -208,10 +215,10 @@ void loop() {
     ledsOff(); renderWhite(now);
     if (wifiLostSince == 0) wifiLostSince = now;
     else if (now - wifiLostSince > WIFI_LOST_RESTART_MS) {
-      Serial.println("[WiFi] lost too long, restart (re-open portal if needed)");
+      Serial.println("[WiFi] lost too long (10min), restart (re-open portal if needed)");
       ESP.restart();   // 새 장소면 재부팅 후 포털 자동 오픈
     }
-    delay(200);
+    delay(20);   // 짧게 — 미연결 흰 LED 호흡을 부드럽게 유지
     return;
   }
   wifiOk = true; wifiLostSince = 0;

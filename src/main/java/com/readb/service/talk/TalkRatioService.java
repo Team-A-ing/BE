@@ -25,9 +25,11 @@ public class TalkRatioService {
     private final SseEmitterRegistry sseEmitterRegistry;
     private final Map<Long, TalkSession> sessions = new ConcurrentHashMap<>();
 
-    // 가장 최근에 청크가 들어온(=현재 진행 중인) 세션 — IoT 디바이스가 미팅 ID 없이 폴링하기 위함
-    private volatile Long activeMeetingId;
-    private volatile long activeUpdatedAtMs;
+    // 가장 최근에 청크가 들어온(=현재 진행 중인) 세션 — IoT 디바이스가 미팅 ID 없이 폴링하기 위함.
+    // 두 필드를 항상 함께(원자적으로) 갱신/초기화/조회해야 하므로 전용 락으로 보호.
+    private final Object activeSessionLock = new Object();
+    private Long activeMeetingId;
+    private long activeUpdatedAtMs;
 
     public void calibrateLeader(Long meetingId, MultipartFile audio) throws IOException {
         TalkSession session = sessions.computeIfAbsent(meetingId, id -> new TalkSession());
@@ -53,15 +55,20 @@ public class TalkRatioService {
         sseEmitterRegistry.push(meetingId, TalkRatioEvent.of(session.leaderRatio()));
 
         // 현재 진행 중인 세션 갱신 (IoT 디바이스 폴링용)
-        activeMeetingId = meetingId;
-        activeUpdatedAtMs = System.currentTimeMillis();
+        synchronized (activeSessionLock) {
+            activeMeetingId = meetingId;
+            activeUpdatedAtMs = System.currentTimeMillis();
+        }
     }
 
     public void endSession(Long meetingId) {
         sessions.remove(meetingId);
         sseEmitterRegistry.complete(meetingId);
-        if (Objects.equals(meetingId, activeMeetingId)) {
-            activeMeetingId = null;
+        // 종료하려는 미팅이 '현재 활성'일 때만 해제 — 그 사이 다른 미팅이 활성이 됐다면 건드리지 않음
+        synchronized (activeSessionLock) {
+            if (Objects.equals(meetingId, activeMeetingId)) {
+                activeMeetingId = null;
+            }
         }
     }
 
@@ -71,8 +78,13 @@ public class TalkRatioService {
 
     /** 미팅 ID 없이 현재 진행 중인 세션의 발화 비율 — ESP32 등 IoT 디바이스 폴링용. */
     public ActiveTalkRatioResponse getActiveRatio() {
-        Long id = activeMeetingId;
-        if (id == null || System.currentTimeMillis() - activeUpdatedAtMs > ACTIVE_STALE_MS) {
+        Long id;
+        long updatedAtMs;
+        synchronized (activeSessionLock) {
+            id = activeMeetingId;
+            updatedAtMs = activeUpdatedAtMs;
+        }
+        if (id == null || System.currentTimeMillis() - updatedAtMs > ACTIVE_STALE_MS) {
             return ActiveTalkRatioResponse.inactive();
         }
         TalkSession session = sessions.get(id);

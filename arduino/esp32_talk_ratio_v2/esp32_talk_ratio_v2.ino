@@ -69,7 +69,6 @@ const int WHITE_PIN = 32;
 //  동작 파라미터
 // ═══════════════════════════════════════════════════════
 const unsigned long POLL_INTERVAL_MS = 2000;  // 서버 폴링 주기
-const unsigned long WIFI_RETRY_MS    = 5000;
 const int           HTTP_TIMEOUT_MS  = 3000;
 const int           MAX_ERRORS       = 10;
 
@@ -145,9 +144,9 @@ void renderWhite(unsigned long now) {
   if (sessionActive && wifiOk) {
     analogWrite(WHITE_PIN, 0);
   } else if (wifiOk) {
-    analogWrite(WHITE_PIN, clampPwm(20 + 80 * breath(now, 3000)));  // 대기 호흡
+    analogWrite(WHITE_PIN, clampPwm(20 + 80 * breath(now, 3000)));   // 대기: 은은한 호흡
   } else {
-    analogWrite(WHITE_PIN, 0);
+    analogWrite(WHITE_PIN, clampPwm(60 + 195 * breath(now, 700)));   // 미연결: 빠른 호흡 (멈춤 아님 표시)
   }
 }
 
@@ -259,25 +258,24 @@ void setup() {
   lcdShowBoot();
 
   connectWiFi();
-  WiFi.setAutoReconnect(true);
+  WiFi.setAutoReconnect(true);   // 끊겨도 백그라운드 자동 재연결 (loop에서 블로킹 안 함)
+  WiFi.persistent(true);
   lcdShowWaiting();
 }
 
 void loop() {
   unsigned long now = millis();
 
-  // WiFi 끊기면 재연결
+  // WiFi 끊기면 — 블로킹 재연결 대신 백그라운드 자동 재연결에 맡기고 흰 LED 애니메이션은 계속
   if (WiFi.status() != WL_CONNECTED) {
-    wifiOk = false;
+    if (wifiOk) { wifiOk = false; lcdShowWaiting(); }  // 막 끊긴 순간 1회만 LCD 갱신
     sessionActive = false;
     ledsOff();
     renderWhite(now);
-    lcdShowWaiting();
-    connectWiFi();
-    delay(WIFI_RETRY_MS);
+    delay(20);
     return;
   }
-  wifiOk = true;
+  if (!wifiOk) { wifiOk = true; lcdShowWaiting(); }  // 막 복구된 순간 1회 갱신
 
   // 주기적 서버 폴링 + LCD 갱신
   if (now - lastPollTime >= POLL_INTERVAL_MS) {
